@@ -1,0 +1,27 @@
+# deps
+node_modules/
+
+# build output (dev), but NOT packages/*/lib — that is shipped in the npm tarball
+dist/
+*.tsbuildinfo
+!packages/*/lib/
+
+# npm
+*.tgz
+.npmrc
+
+# logs / temp
+*.log
+*.tmp
+.zip-*
+.zip-tmp-*
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# env
+.env
+.env.local

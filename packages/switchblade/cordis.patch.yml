@@ -1,0 +1,21 @@
+# dsh-switchblade bundle: naming this package in a profile's `dsh.profile.bundles`
+# composes the switchblade plugin in one step.
+#
+# The profile composer (packages/boot/app-boot/src/profile.ts) applies each
+# bundle's patch list — packages whose package.json declares
+# `"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }` — in bundles order,
+# then the profile's own cordis.patch.yml, then --patch file overlays.
+#
+#   # after `pnpm add @deepseek-ai/dsh-switchblade`, add to the PROFILE's
+#   # $DSH_HOME/profiles/<name>/package.json:
+#   { "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-switchblade"] } } }
+#
+# (The `--patch` launcher flag takes FILE paths, not package names; package
+# names live in `dsh.profile.bundles`.)
+
+- insert:
+    - id: switchblade
+      name: '@deepseek-ai/dsh-switchblade'
+      config:
+        # Optional: pin the default prompt profile composed when sessions name none.
+        # defaultProfile: graybeard

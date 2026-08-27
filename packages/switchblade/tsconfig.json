@@ -1,0 +1,46 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "lib": ["es2024", "DOM", "DOM.Iterable"]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cosmokit"
+    },
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../core/scope"
+    },
+    {
+      "path": "../../interaction/commands"
+    },
+    {
+      "path": "../../preset/agent-presets"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
+      "path": "../../skill/skill"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../runtime-diagnostics/invariants"
+    }
+  ]
+}
