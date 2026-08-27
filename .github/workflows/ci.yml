@@ -20,11 +20,13 @@ jobs:
       - name: Syntax-check cli.cjs
         run: node --check cli.cjs
 
-      # 2. Shipped plugin builds are present and loadable.
-      - name: Verify shipped libs load
+      # 2. Shipped plugin builds are present and structurally sound.
+      #    The bundles import DSH runtime packages (@deepseek-ai/cordis etc.)
+      #    that only exist inside a harness checkout, so we verify the files
+      #    rather than executing the imports.
+      - name: Verify shipped libs
         run: |
-          node -e "import('./packages/switchblade/lib/index.js').then(m=>{if(!m.Switchblade) throw new Error('missing Switchblade'); console.log('host OK')})"
-          node -e "import('./packages/client-ui-switchblade/lib/index.js').then(m=>{if(!m.default && !m.client) throw new Error('missing client entry'); console.log('client OK')})"
+          node scripts/verify-shipped.mjs
 
       # 3. Every bilingual doc has its counterpart (.md <-> .en.md).
       - name: Check bilingual doc pairs
