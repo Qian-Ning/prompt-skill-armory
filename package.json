@@ -30,10 +30,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-name/prompt-skill-armory.git"
+    "url": "https://github.com/Qian-Ning/prompt-skill-armory.git"
   },
-  "homepage": "https://github.com/your-name/prompt-skill-armory",
+  "homepage": "https://github.com/Qian-Ning/prompt-skill-armory",
   "bugs": {
-    "url": "https://github.com/your-name/prompt-skill-armory/issues"
+    "url": "https://github.com/Qian-Ning/prompt-skill-armory/issues"
   }
 }

@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 1. Installer CLI is valid JavaScript and parses.
+      - name: Syntax-check cli.cjs
+        run: node --check cli.cjs
+
+      # 2. Shipped plugin builds are present and loadable.
+      - name: Verify shipped libs load
+        run: |
+          node -e "import('./packages/switchblade/lib/index.js').then(m=>{if(!m.Switchblade) throw new Error('missing Switchblade'); console.log('host OK')})"
+          node -e "import('./packages/client-ui-switchblade/lib/index.js').then(m=>{if(!m.default && !m.client) throw new Error('missing client entry'); console.log('client OK')})"
+
+      # 3. Every bilingual doc has its counterpart (.md <-> .en.md).
+      - name: Check bilingual doc pairs
+        run: |
+          for f in README CHANGELOG PUBLISHING TESTING UPSTREAM; do
+            test -f "$f.md" || { echo "missing $f.md"; exit 1; }
+            test -f "$f.en.md" || { echo "missing $f.en.md"; exit 1; }
+          done
+          echo "all bilingual pairs present"
+
+      # 4. package.json metadata is sane (name/version/bin/files).
+      - name: Check package metadata
+        run: |
+          node -e "const p=require('./package.json'); if(!p.name||!p.version) throw new Error('bad metadata'); if(!p.bin||!p.bin.armory) throw new Error('missing bin'); if(!p.files||!p.files.includes('packages/')) throw new Error('missing files'); console.log('metadata OK', p.name, p.version)"
