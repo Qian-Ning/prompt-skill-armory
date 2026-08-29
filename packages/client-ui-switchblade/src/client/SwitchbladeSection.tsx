@@ -37,7 +37,6 @@ export type SwitchbladeSectionProps =
  * ──────────────────────────────────────────────────────────────── */
 const BG = '#0d1117'          // root background
 const SURFACE = '#161b22'     // card / form surface
-const SURFACE2 = '#1c2128'    // raised surface
 const BORDER = '#30363d'      // hairline border
 const TEXT = '#e6edf3'        // primary text
 const TEXT_MUTED = '#8b949e'  // secondary text
@@ -299,7 +298,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
 type TabKey = 'prompts' | 'skills' | 'presets'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.4.6'
+const ARMORY_VERSION = '0.5.6'
 
 /** Render the Prompt-SkillArmory management page. */
 export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element {

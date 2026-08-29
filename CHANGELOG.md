@@ -8,6 +8,13 @@
 
 ## [Unreleased] · 未发布
 
+## [0.5.6] - 2026-08
+
+### 变更 · Changed
+- 三个 tab 改为上下布局（操作区在上、列表在下、列表 flex 自适应），三个 tab 高度一致，消除底部留白与溢出。
+  Tabs switched to a vertical layout (form on top, list below, list flex-adaptive) so all three tabs share one height — no bottom whitespace or overflow.
+- 版本徽章同步到 0.5.6。Version badge bumped to 0.5.6.
+
 ## [0.5.5] - 2026-08
 
 ### 修复
