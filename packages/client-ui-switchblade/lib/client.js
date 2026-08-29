@@ -394,7 +394,7 @@ window.__ModuleLoader__.load({
 		const ARMORY_VERSION = "0.5.6";
 		/** Render the Prompt-SkillArmory management page. */
 		function SwitchbladeSection(props) {
-			const { useSwitchblade, t, load, setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt, installSkill, updateSkill, setSkillEnabled, uninstallSkill } = props;
+			const { useSwitchblade, t, load, setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt, installSkill, updateSkill, setSkillEnabled, uninstallSkill, addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer } = props;
 			const state = useSwitchblade((snapshot) => snapshot);
 			const [promptName, setPromptName] = (0, react.useState)("");
 			const [promptDesc, setPromptDesc] = (0, react.useState)("");
@@ -410,6 +410,12 @@ window.__ModuleLoader__.load({
 			const [activeTab, setActiveTab] = (0, react.useState)("prompts");
 			const [editingPromptId, setEditingPromptId] = (0, react.useState)();
 			const [editingSkillName, setEditingSkillName] = (0, react.useState)();
+			const [mcpName, setMcpName] = (0, react.useState)("");
+			const [mcpTransport, setMcpTransport] = (0, react.useState)("stdio");
+			const [mcpCommand, setMcpCommand] = (0, react.useState)("");
+			const [mcpArgs, setMcpArgs] = (0, react.useState)("");
+			const [mcpUrl, setMcpUrl] = (0, react.useState)("");
+			const [editingMcpName, setEditingMcpName] = (0, react.useState)();
 			(0, react.useEffect)(() => {
 				load();
 			}, [load]);
@@ -418,6 +424,41 @@ window.__ModuleLoader__.load({
 			};
 			const setDefault = (id) => {
 				setDefaultPreset(id);
+			};
+			/** Submit the MCP server form (add or update). */
+			const submitMcpServer = () => {
+				if (mcpName.trim() === "") return;
+				setBusy(true);
+				const base = {
+					serverName: mcpName.trim(),
+					transport: mcpTransport,
+					enabled: true
+				};
+				const config = mcpTransport === "stdio" ? {
+					...base,
+					command: mcpCommand.trim(),
+					args: mcpArgs.trim() ? mcpArgs.trim().split(/\s+/) : []
+				} : {
+					...base,
+					url: mcpUrl.trim()
+				};
+				(editingMcpName !== void 0 ? updateMcpServer(editingMcpName, config) : addMcpServer(config)).catch((error) => console.error("[switchblade] mcp save failed", error)).finally(() => {
+					setBusy(false);
+					setMcpName("");
+					setMcpCommand("");
+					setMcpArgs("");
+					setMcpUrl("");
+					setEditingMcpName(void 0);
+				});
+			};
+			/** Load one MCP server into the edit form. */
+			const startEditMcpServer = (server) => {
+				setEditingMcpName(server.serverName);
+				setMcpName(server.serverName);
+				setMcpTransport(server.transport);
+				setMcpCommand(server.command ?? "");
+				setMcpArgs((server.args ?? []).join(" "));
+				setMcpUrl(server.url ?? "");
 			};
 			/** Read a local skill .md file into the import form. */
 			const onSkillFile = (file) => {
@@ -630,6 +671,18 @@ window.__ModuleLoader__.load({
 									t("agentPresetsTitle"),
 									" (",
 									state.status === "loading" ? "…" : presetRows.length,
+									")"
+								]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+								style: {
+									...CSS.tab,
+									...activeTab === "mcp" ? CSS.tabActive : {}
+								},
+								onClick: () => setActiveTab("mcp"),
+								children: [
+									"MCP (",
+									state.status === "loading" ? "…" : state.mcpServers.length,
 									")"
 								]
 							})
@@ -923,7 +976,121 @@ window.__ModuleLoader__.load({
 										]
 									}, row.id))
 								})
-							] })
+							] }),
+							activeTab === "mcp" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: CSS.form,
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										style: CSS.input,
+										placeholder: "服务器名称 (serverName)",
+										value: mcpName,
+										onChange: (e) => setMcpName(e.target.value)
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: CSS.actions,
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											style: {
+												...CSS.actionBtn,
+												...mcpTransport === "stdio" ? CSS.tabActive : {}
+											},
+											onClick: () => setMcpTransport("stdio"),
+											children: "stdio"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											style: {
+												...CSS.actionBtn,
+												...mcpTransport === "streamable-http" ? CSS.tabActive : {}
+											},
+											onClick: () => setMcpTransport("streamable-http"),
+											children: "HTTP"
+										})]
+									}),
+									mcpTransport === "stdio" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										style: CSS.input,
+										placeholder: "命令 (command, 如 npx)",
+										value: mcpCommand,
+										onChange: (e) => setMcpCommand(e.target.value)
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										style: CSS.input,
+										placeholder: "参数 (args, 空格分隔)",
+										value: mcpArgs,
+										onChange: (e) => setMcpArgs(e.target.value)
+									})] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										style: CSS.input,
+										placeholder: "URL (如 http://localhost:3000/mcp)",
+										value: mcpUrl,
+										onChange: (e) => setMcpUrl(e.target.value)
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: CSS.actions,
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											style: CSS.actionBtn,
+											disabled: busy,
+											onClick: submitMcpServer,
+											children: editingMcpName !== void 0 ? "保存" : "添加"
+										}), editingMcpName !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											style: CSS.actionBtn,
+											onClick: () => {
+												setEditingMcpName(void 0);
+												setMcpName("");
+												setMcpCommand("");
+												setMcpArgs("");
+												setMcpUrl("");
+											},
+											children: "取消"
+										})]
+									})
+								]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								style: CSS.scrollBox,
+								children: state.mcpServers.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									style: CSS.empty,
+									children: "暂无 MCP 服务器"
+								}) : state.mcpServers.map((server) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: CSS.card,
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: CSS.cardTop,
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+												style: CSS.name,
+												children: server.serverName
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												style: {
+													...CSS.badge,
+													...server.enabled ? CSS.badgeEnabled : CSS.badgeDisabled
+												},
+												children: server.enabled ? "启用" : "停用"
+											})]
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: CSS.desc,
+											children: [server.transport, server.transport === "stdio" ? ` · ${server.command ?? ""}` : ` · ${server.url ?? ""}`]
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: CSS.actions,
+											children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													style: CSS.actionBtn,
+													onClick: () => toggleMcpServer(server.serverName, !server.enabled),
+													children: server.enabled ? "停用" : "启用"
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													style: CSS.actionBtn,
+													onClick: () => startEditMcpServer(server),
+													children: "编辑"
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													style: {
+														...CSS.actionBtn,
+														...CSS.dangerBtn
+													},
+													onClick: () => removeMcpServer(server.serverName),
+													children: "删除"
+												})
+											]
+										})
+									]
+								}, server.serverName))
+							})] })
 						]
 					})
 				]
@@ -938,7 +1105,8 @@ window.__ModuleLoader__.load({
 			presets: [],
 			commands: [],
 			prompts: [],
-			installedSkills: []
+			installedSkills: [],
+			mcpServers: []
 		};
 		/** Normalize a thrown wire error to a message. */
 		function messageOf(error) {
@@ -996,13 +1164,24 @@ window.__ModuleLoader__.load({
 						content: s.content ?? "",
 						enabled: s.enabled ?? true
 					})) : [];
+					const mcpServers = Array.isArray(switchbladeSection?.mcpServers) ? switchbladeSection.mcpServers.map((s) => ({
+						serverName: s.serverName,
+						transport: s.transport,
+						...s.command === void 0 ? {} : { command: s.command },
+						...s.args === void 0 ? {} : { args: s.args },
+						...s.env === void 0 ? {} : { env: s.env },
+						...s.url === void 0 ? {} : { url: s.url },
+						...s.headers === void 0 ? {} : { headers: s.headers },
+						enabled: s.enabled ?? true
+					})) : [];
 					this.store.set({
 						status: "ready",
 						skills,
 						presets,
 						commands: [],
 						prompts,
-						installedSkills
+						installedSkills,
+						mcpServers
 					});
 				} catch (error) {
 					this.store.set({
@@ -1201,6 +1380,50 @@ window.__ModuleLoader__.load({
 				if (!res.result.ok) throw new Error(res.result.error.message);
 				await this.load();
 			}
+			/** Add a new MCP server config. */
+			async addMcpServer(config) {
+				const next = [...this.currentMcpServers(), config];
+				await this.writeMcpServers(next);
+			}
+			/** Update an MCP server config. */
+			async updateMcpServer(name, patch) {
+				const next = this.currentMcpServers().map((s) => s.serverName === name ? {
+					...s,
+					...patch,
+					serverName: name
+				} : s);
+				await this.writeMcpServers(next);
+			}
+			/** Toggle one MCP server's enabled state (Host auto-starts/stops). */
+			async toggleMcpServer(name, enabled) {
+				const next = this.currentMcpServers().map((s) => s.serverName === name ? {
+					...s,
+					enabled
+				} : s);
+				await this.writeMcpServers(next);
+			}
+			/** Remove an MCP server config. */
+			async removeMcpServer(name) {
+				const next = this.currentMcpServers().filter((s) => s.serverName !== name);
+				await this.writeMcpServers(next);
+			}
+			/** Persist the MCP server config list. */
+			async writeMcpServers(servers) {
+				const res = await this.api.settings.mutate({
+					ns: "switchblade",
+					ops: [{
+						op: "set",
+						path: ["mcpServers"],
+						value: servers
+					}]
+				});
+				if (!res.result.ok) throw new Error(res.result.error.message);
+				await this.load();
+			}
+			/** Current MCP server list from the loaded snapshot. */
+			currentMcpServers() {
+				return this.store.getSnapshot().mcpServers;
+			}
 		};
 		//#endregion
 		//#region src/client/index.ts
@@ -1245,7 +1468,11 @@ window.__ModuleLoader__.load({
 					updateSkill: (name, patch) => controller.updateSkill(name, patch),
 					setSkillEnabled: (name, enabled) => controller.setSkillEnabled(name, enabled),
 					uninstallSkill: (name) => controller.uninstallSkill(name),
-					installSkillFromZip: (name, dataBase64) => controller.installSkillFromZip(name, dataBase64)
+					installSkillFromZip: (name, dataBase64) => controller.installSkillFromZip(name, dataBase64),
+					addMcpServer: (config) => controller.addMcpServer(config),
+					updateMcpServer: (name, patch) => controller.updateMcpServer(name, patch),
+					toggleMcpServer: (name, enabled) => controller.toggleMcpServer(name, enabled),
+					removeMcpServer: (name) => controller.removeMcpServer(name)
 				})
 			}, SwitchbladeSection));
 		}

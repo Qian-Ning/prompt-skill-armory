@@ -1,21 +1,4 @@
-//#region lib/types/patch.js
-/**
-* bundle patch-layer serialization for `@deepseek-ai/dsh-switchblade`.
-*
-* A DSH "bundle" is a package whose package.json declares `dsh.bundle.patch`
-* pointing at a `cordis.patch.yml`. Profile composition resolves that field and
-* overlays the patch rows onto the profile root; later patches win per row id.
-* This module renders and re-parses the subset of that format Switchblade owns:
-* the `switchblade` row (carrying the installed skill + custom command rows as
-* plugin config) and the `agent-presets` default row.
-*
-* The serializer is deliberately small and dependency-free. It emits the same
-* block-style YAML shape the harness bundles use (`- id:` rows with nested
-* arrays), and `parsePatch` understands exactly that shape for the rows this
-* exporter writes. Swap in a real YAML parser for arbitrary external bundles.
-*
-* @module @deepseek-ai/dsh-switchblade/patch
-*/
+//#region src/patch.ts
 /** Prefix each patch row carries so an importer can find its own rows. */
 const SWITCHBLADE_ROW = "switchblade";
 const AGENT_PRESETS_ROW = "agent-presets";

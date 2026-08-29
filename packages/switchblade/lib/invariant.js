@@ -1,15 +1,4 @@
-//#region lib/types/invariant.js
-/**
-* Validation invariants for `@deepseek-ai/dsh-switchblade`.
-*
-* Mirrors the `src/invariant.ts` convention of sibling DSH packages: pure,
-* dependency-light predicates that a consumer (and the snapshot test hint)
-* can rely on instead of re-parsing switchblade's own postconditions.
-* Zero external RUNTIME dependencies — `isInstallSkillName` inlines the skill
-* grammar — so the module is directly loadable in a standalone test rig.
-*
-* @module @deepseek-ai/dsh-switchblade
-*/
+//#region src/invariant.ts
 /** All three managed kinds in canonical order. */
 const MANAGED_KINDS = [
 	"skill",

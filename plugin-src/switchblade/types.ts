@@ -94,3 +94,45 @@ export interface SwitchbladeSnapshot {
   readonly presets: readonly AgentPreset[]
   readonly commands: readonly CommandDescriptor[]
 }
+
+/** One configured MCP server (persisted in the switchblade settings namespace). */
+export interface McpServerConfig {
+  /** Stable namespace for this server's model-facing tool names (`mcp__<serverName>__<rawName>`). */
+  readonly serverName: string
+  /** Transport: spawn a child process over stdio, or connect over Streamable HTTP. */
+  readonly transport: 'stdio' | 'streamable-http'
+  /** Executable to spawn (stdio transport). */
+  readonly command?: string
+  /** Arguments passed to the command (stdio transport). */
+  readonly args?: readonly string[]
+  /** Extra env vars merged on top of scrubbed ambient env (stdio transport). */
+  readonly env?: Readonly<Record<string, string>>
+  /** MCP endpoint URL (streamable-http transport). */
+  readonly url?: string
+  /** Additional headers attached to MCP requests (streamable-http transport). */
+  readonly headers?: Readonly<Record<string, string>>
+  /** Whether this server should be running (auto-started on plugin load). */
+  readonly enabled: boolean
+}
+
+/** Runtime status of one MCP server. */
+export interface McpServerStatus {
+  /** Server namespace. */
+  readonly serverName: string
+  /** Transport type. */
+  readonly transport: 'stdio' | 'streamable-http'
+  /** Whether the server is configured to run. */
+  readonly enabled: boolean
+  /** Whether a live mcp-client instance is currently loaded. */
+  readonly running: boolean
+  /** Number of tools currently registered from this server. */
+  readonly toolCount: number
+}
+
+/** One MCP tool registered on `ctx.tools` under a server-qualified name. */
+export interface McpToolInfo {
+  /** Public tool name (`mcp__<serverName>__<rawName>`). */
+  readonly name: string
+  /** Server-provided description. */
+  readonly description: string
+}

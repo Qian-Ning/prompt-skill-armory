@@ -67,6 +67,10 @@ export function apply(ctx: ClientContext): void {
       setSkillEnabled: (name, enabled) => controller.setSkillEnabled(name, enabled),
       uninstallSkill: (name) => controller.uninstallSkill(name),
       installSkillFromZip: (name, dataBase64) => controller.installSkillFromZip(name, dataBase64),
+      addMcpServer: (config) => controller.addMcpServer(config),
+      updateMcpServer: (name, patch) => controller.updateMcpServer(name, patch),
+      toggleMcpServer: (name, enabled) => controller.toggleMcpServer(name, enabled),
+      removeMcpServer: (name) => controller.removeMcpServer(name),
     }),
   }, SwitchbladeSection))
 }

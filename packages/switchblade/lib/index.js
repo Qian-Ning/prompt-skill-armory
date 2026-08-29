@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { settingsNamespace } from "@deepseek-ai/dsh-settings";
 import z from "@deepseek-ai/schemastery";
-//#region lib/types/commands.js
+//#region src/commands.ts
 /**
 * The `/sw` slash-command family.
 *
@@ -187,18 +187,7 @@ function defineCommands(ctx, sb) {
 	}
 }
 //#endregion
-//#region lib/types/invariant.js
-/**
-* Validation invariants for `@deepseek-ai/dsh-switchblade`.
-*
-* Mirrors the `src/invariant.ts` convention of sibling DSH packages: pure,
-* dependency-light predicates that a consumer (and the snapshot test hint)
-* can rely on instead of re-parsing switchblade's own postconditions.
-* Zero external RUNTIME dependencies — `isInstallSkillName` inlines the skill
-* grammar — so the module is directly loadable in a standalone test rig.
-*
-* @module @deepseek-ai/dsh-switchblade
-*/
+//#region src/invariant.ts
 /** All three managed kinds in canonical order. */
 const MANAGED_KINDS = [
 	"skill",
@@ -240,24 +229,7 @@ function isCommandName(name) {
 	return /^[a-z][a-z0-9_-]*$/u.test(name);
 }
 //#endregion
-//#region lib/types/patch.js
-/**
-* bundle patch-layer serialization for `@deepseek-ai/dsh-switchblade`.
-*
-* A DSH "bundle" is a package whose package.json declares `dsh.bundle.patch`
-* pointing at a `cordis.patch.yml`. Profile composition resolves that field and
-* overlays the patch rows onto the profile root; later patches win per row id.
-* This module renders and re-parses the subset of that format Switchblade owns:
-* the `switchblade` row (carrying the installed skill + custom command rows as
-* plugin config) and the `agent-presets` default row.
-*
-* The serializer is deliberately small and dependency-free. It emits the same
-* block-style YAML shape the harness bundles use (`- id:` rows with nested
-* arrays), and `parsePatch` understands exactly that shape for the rows this
-* exporter writes. Swap in a real YAML parser for arbitrary external bundles.
-*
-* @module @deepseek-ai/dsh-switchblade/patch
-*/
+//#region src/patch.ts
 /** Prefix each patch row carries so an importer can find its own rows. */
 const SWITCHBLADE_ROW = "switchblade";
 const AGENT_PRESETS_ROW = "agent-presets";
@@ -440,7 +412,7 @@ function dequote(raw) {
 	return value;
 }
 //#endregion
-//#region lib/types/switchblade.js
+//#region src/switchblade.ts
 /**
 * `Switchblade` — the Host-side core of the management surface.
 *
@@ -469,7 +441,8 @@ const SETTINGS_NAMESPACE = "switchblade";
 const SwitchbladeSettingsSchema = z.object({
 	installedSkills: z.array(z.any()).default([]),
 	customCommands: z.array(z.any()).default([]),
-	prompts: z.array(z.any()).default([])
+	prompts: z.array(z.any()).default([]),
+	mcpServers: z.array(z.any()).default([])
 });
 /** One prompt section id prefix registered on ctx.systemPrompt. */
 const PROMPT_SECTION_PREFIX = "switchblade:prompt:";
@@ -495,6 +468,8 @@ var Switchblade = class extends Service {
 	registrations = /* @__PURE__ */ new Map();
 	/** Live disposers for enabled prompt sections, keyed by prompt id. */
 	promptSections = /* @__PURE__ */ new Map();
+	/** Live mcp-client loader entry ids, keyed by serverName. */
+	mcpEntries = /* @__PURE__ */ new Map();
 	/** The settings namespace scope; present only while a settings provider is composed. */
 	settingsScope;
 	/** The settings service behind {@link settingsScope}, for path writes. */
@@ -525,6 +500,11 @@ var Switchblade = class extends Service {
 						this.applySkillRegistrations();
 					} catch (e) {
 						settingsCtx.logger.warn(`[switchblade] skill reconcile: ${String(e)}`);
+					}
+					try {
+						this.reconcileMcpServers();
+					} catch (e) {
+						settingsCtx.logger.warn(`[switchblade] mcp reconcile: ${String(e)}`);
 					}
 					reconciling = false;
 				});
@@ -1018,6 +998,121 @@ var Switchblade = class extends Service {
 			this.ctx.logger.warn(`[switchblade] custom command reinstall failed: ${String(error)}`);
 		}
 		if (settings.prompts.length > 0) this.applyPromptRegistrations();
+		for (const server of settings.mcpServers) if (server.enabled) this.startMcpServer(server.serverName);
+	}
+	/** Reconcile live mcp-client instances against the persisted config list. */
+	reconcileMcpServers() {
+		const servers = this.settings().mcpServers;
+		const wanted = /* @__PURE__ */ new Set();
+		for (const server of servers) {
+			wanted.add(server.serverName);
+			if (server.enabled && !this.mcpEntries.has(server.serverName)) this.startMcpServer(server.serverName);
+			else if (!server.enabled && this.mcpEntries.has(server.serverName)) this.stopMcpServer(server.serverName);
+		}
+		for (const name of [...this.mcpEntries.keys()]) if (!wanted.has(name)) this.stopMcpServer(name);
+	}
+	/** List all configured MCP servers with their runtime status. */
+	async listMcpServers() {
+		const tools = this.listMcpTools();
+		return this.settings().mcpServers.map((server) => {
+			const running = this.mcpEntries.has(server.serverName);
+			const toolCount = tools.filter((t) => t.name.startsWith(`mcp__${server.serverName}__`)).length;
+			return {
+				serverName: server.serverName,
+				transport: server.transport,
+				enabled: server.enabled,
+				running,
+				toolCount
+			};
+		});
+	}
+	/** Add a new MCP server config and start it if enabled. */
+	async addMcpServer(config) {
+		const servers = this.settings().mcpServers;
+		if (servers.some((s) => s.serverName === config.serverName)) throw new Error(`MCP server "${config.serverName}" already exists`);
+		await this.writeMcpServers([...servers, config]);
+		if (config.enabled) await this.startMcpServer(config.serverName);
+	}
+	/** Update an MCP server config; restarts it if it was running. */
+	async updateMcpServer(name, patch) {
+		const servers = this.settings().mcpServers;
+		const index = servers.findIndex((s) => s.serverName === name);
+		if (index < 0) throw new Error(`MCP server "${name}" not found`);
+		if (this.mcpEntries.has(name)) await this.stopMcpServer(name);
+		const next = servers.map((s, i) => i === index ? {
+			...s,
+			...patch,
+			serverName: name
+		} : s);
+		await this.writeMcpServers(next);
+		if (patch.enabled ?? next[index].enabled) await this.startMcpServer(name);
+	}
+	/** Remove an MCP server config and stop it if running. */
+	async removeMcpServer(name) {
+		if (this.mcpEntries.has(name)) await this.stopMcpServer(name);
+		const next = this.settings().mcpServers.filter((s) => s.serverName !== name);
+		await this.writeMcpServers(next);
+	}
+	/** Start (load) one MCP server's mcp-client instance. */
+	async startMcpServer(name) {
+		if (this.mcpEntries.has(name)) return;
+		const server = this.settings().mcpServers.find((s) => s.serverName === name);
+		if (server === void 0) throw new Error(`MCP server "${name}" not found`);
+		const loader = this.ctx.loader;
+		if (loader === void 0 || typeof loader.create !== "function") {
+			this.ctx.logger.warn(`[switchblade] loader unavailable — cannot start MCP server ${name}`);
+			return;
+		}
+		try {
+			const id = await loader.create({
+				name: "@deepseek-ai/dsh-mcp-client",
+				config: {
+					serverName: server.serverName,
+					transport: server.transport,
+					...server.transport === "stdio" ? {
+						command: server.command,
+						args: server.args ?? [],
+						env: server.env ?? {}
+					} : {
+						url: server.url,
+						headers: server.headers ?? {}
+					}
+				}
+			});
+			this.mcpEntries.set(name, id);
+			this.ctx.logger.warn(`[switchblade] started MCP server ${name}`);
+		} catch (error) {
+			this.ctx.logger.warn(`[switchblade] failed to start MCP server ${name}: ${String(error)}`);
+		}
+	}
+	/** Stop (unload) one MCP server's mcp-client instance. */
+	async stopMcpServer(name) {
+		const id = this.mcpEntries.get(name);
+		if (id === void 0) return;
+		const loader = this.ctx.loader;
+		if (loader !== void 0 && typeof loader.remove === "function") try {
+			await loader.remove(id);
+		} catch (error) {
+			this.ctx.logger.warn(`[switchblade] failed to stop MCP server ${name}: ${String(error)}`);
+		}
+		this.mcpEntries.delete(name);
+	}
+	/** List all MCP tools currently registered on ctx.tools. */
+	listMcpTools() {
+		const tools = this.ctx.tools;
+		if (tools === void 0 || typeof tools.schemas !== "function") return [];
+		return tools.schemas().filter((t) => t.name.startsWith("mcp__")).map((t) => ({
+			name: t.name,
+			description: t.description ?? ""
+		}));
+	}
+	/** Persist the MCP server config list. */
+	async writeMcpServers(servers) {
+		await this.settingsService?.mutate(settingsNamespace(SETTINGS_NAMESPACE), [{
+			op: "set",
+			path: ["mcpServers"],
+			value: servers
+		}]);
 	}
 	/** Flip one owned skill's runtime registration and persist the definition set. */
 	async setOwnedSkill(id, def, enabled) {
@@ -1110,24 +1205,7 @@ function passthroughCommand(row) {
 	};
 }
 //#endregion
-//#region lib/types/index.js
-/**
-* `@deepseek-ai/dsh-switchblade` — CCswitch-style manager for skills, prompt
-* profiles, and slash commands in the DeepSeek Harness.
-*
-* The package exports a function plugin exactly like `@deepseek-ai/dsh-command-goal`:
-*   - `name`   — plugin identity
-*   - `inject` — services the plugin requires (commands), so ctx.commands is
-*     resolvable; WITHOUT this, `ctx.commands` throws "without inject"
-*   - `apply`  — mounts the {@link Switchblade} service and registers the /sw
-*     slash-command family
-*
-* NOTE: do NOT add a `export default` — the loader's `unwrapExports` returns
-* `exports.default ?? exports`, so a default export would shadow the module's
-* `name`/`inject`/`apply` and break inject resolution.
-*
-* @module @deepseek-ai/dsh-switchblade
-*/
+//#region src/index.ts
 /** Cordis plugin identity. */
 const name = "switchblade";
 /** Services this plugin requires; declaring them makes ctx.commands resolvable. */

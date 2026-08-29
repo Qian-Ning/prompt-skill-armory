@@ -34,7 +34,8 @@ import {
   ID_PREFIX, isCommandName, isInstallSkillName,
 } from './invariant.ts'
 import type {
-  CommandEntry, InstallSkillInput, ProfileEntry, SkillEntry,
+  CommandEntry, InstallSkillInput, McpServerConfig, McpServerStatus, McpToolInfo,
+  ProfileEntry, SkillEntry,
   SwitchbladeActionResult, SwitchbladeCatalog, SwitchbladeEntry, SwitchbladeSnapshot,
 } from './types.ts'
 import { parsePatch, renderPatch } from './patch.ts'
@@ -71,6 +72,8 @@ export interface SwitchbladeSettings {
   readonly customCommands: readonly CommandDefinition[]
   /** User-authored prompts injected into the system prompt. */
   readonly prompts: readonly ManagedPrompt[]
+  /** Configured MCP servers (each bridges one external MCP server's tools). */
+  readonly mcpServers: readonly McpServerConfig[]
 }
 
 /** Runtime schema for the persisted slice. */
@@ -78,6 +81,7 @@ export const SwitchbladeSettingsSchema = z.object({
   installedSkills: z.array(z.any()).default([]),
   customCommands: z.array(z.any()).default([]),
   prompts: z.array(z.any()).default([]),
+  mcpServers: z.array(z.any()).default([]),
 })
 
 /** One prompt section id prefix registered on ctx.systemPrompt. */
@@ -117,6 +121,9 @@ export class Switchblade extends Service {
   /** Live disposers for enabled prompt sections, keyed by prompt id. */
   private readonly promptSections = new Map<string, () => void>()
 
+  /** Live mcp-client loader entry ids, keyed by serverName. */
+  private readonly mcpEntries = new Map<string, string>()
+
   /** The settings namespace scope; present only while a settings provider is composed. */
   private settingsScope: SettingsScope<SwitchbladeSettings> | undefined
 
@@ -154,6 +161,7 @@ export class Switchblade extends Service {
           // others.
           try { this.applyPromptRegistrations() } catch (e) { settingsCtx.logger.warn(`[switchblade] prompt reconcile: ${String(e)}`) }
           try { this.applySkillRegistrations() } catch (e) { settingsCtx.logger.warn(`[switchblade] skill reconcile: ${String(e)}`) }
+          try { this.reconcileMcpServers() } catch (e) { settingsCtx.logger.warn(`[switchblade] mcp reconcile: ${String(e)}`) }
           reconciling = false
         })
       }
@@ -681,11 +689,137 @@ export class Switchblade extends Service {
     }
     // Re-inject enabled prompts into the system prompt.
     if (settings.prompts.length > 0) this.applyPromptRegistrations()
+    // Reconnect enabled MCP servers (each bridges one external server's tools).
+    for (const server of settings.mcpServers) {
+      if (server.enabled) void this.startMcpServer(server.serverName)
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // MCP server management
+  // ---------------------------------------------------------------------------
+
+  /** Reconcile live mcp-client instances against the persisted config list. */
+  private reconcileMcpServers(): void {
+    const servers = this.settings().mcpServers
+    const wanted = new Set<string>()
+    for (const server of servers) {
+      wanted.add(server.serverName)
+      if (server.enabled && !this.mcpEntries.has(server.serverName)) {
+        void this.startMcpServer(server.serverName)
+      } else if (!server.enabled && this.mcpEntries.has(server.serverName)) {
+        void this.stopMcpServer(server.serverName)
+      }
+    }
+    // Stop servers removed from the config.
+    for (const name of [...this.mcpEntries.keys()]) {
+      if (!wanted.has(name)) void this.stopMcpServer(name)
+    }
+  }
+
+  /** List all configured MCP servers with their runtime status. */
+  async listMcpServers(): Promise<McpServerStatus[]> {
+    const tools = this.listMcpTools()
+    return this.settings().mcpServers.map((server) => {
+      const running = this.mcpEntries.has(server.serverName)
+      const toolCount = tools.filter((t) => t.name.startsWith(`mcp__${server.serverName}__`)).length
+      return {
+        serverName: server.serverName,
+        transport: server.transport,
+        enabled: server.enabled,
+        running,
+        toolCount,
+      }
+    })
+  }
+
+  /** Add a new MCP server config and start it if enabled. */
+  async addMcpServer(config: McpServerConfig): Promise<void> {
+    const servers = this.settings().mcpServers
+    if (servers.some((s) => s.serverName === config.serverName)) {
+      throw new Error(`MCP server "${config.serverName}" already exists`)
+    }
+    await this.writeMcpServers([...servers, config])
+    if (config.enabled) await this.startMcpServer(config.serverName)
+  }
+
+  /** Update an MCP server config; restarts it if it was running. */
+  async updateMcpServer(name: string, patch: Partial<McpServerConfig>): Promise<void> {
+    const servers = this.settings().mcpServers
+    const index = servers.findIndex((s) => s.serverName === name)
+    if (index < 0) throw new Error(`MCP server "${name}" not found`)
+    const wasRunning = this.mcpEntries.has(name)
+    if (wasRunning) await this.stopMcpServer(name)
+    const next = servers.map((s, i) => i === index ? { ...s, ...patch, serverName: name } : s)
+    await this.writeMcpServers(next)
+    if (patch.enabled ?? next[index].enabled) await this.startMcpServer(name)
+  }
+
+  /** Remove an MCP server config and stop it if running. */
+  async removeMcpServer(name: string): Promise<void> {
+    if (this.mcpEntries.has(name)) await this.stopMcpServer(name)
+    const next = this.settings().mcpServers.filter((s) => s.serverName !== name)
+    await this.writeMcpServers(next)
+  }
+
+  /** Start (load) one MCP server's mcp-client instance. */
+  async startMcpServer(name: string): Promise<void> {
+    if (this.mcpEntries.has(name)) return
+    const server = this.settings().mcpServers.find((s) => s.serverName === name)
+    if (server === undefined) throw new Error(`MCP server "${name}" not found`)
+    const loader = (this.ctx as Context & { loader?: { create: (o: { name: string; config?: unknown }) => Promise<string> } }).loader
+    if (loader === undefined || typeof loader.create !== 'function') {
+      this.ctx.logger.warn(`[switchblade] loader unavailable — cannot start MCP server ${name}`)
+      return
+    }
+    try {
+      const id = await loader.create({
+        name: '@deepseek-ai/dsh-mcp-client',
+        config: {
+          serverName: server.serverName,
+          transport: server.transport,
+          ...(server.transport === 'stdio'
+            ? { command: server.command, args: server.args ?? [], env: server.env ?? {} }
+            : { url: server.url, headers: server.headers ?? {} }),
+        },
+      })
+      this.mcpEntries.set(name, id)
+      this.ctx.logger.warn(`[switchblade] started MCP server ${name}`)
+    } catch (error) {
+      this.ctx.logger.warn(`[switchblade] failed to start MCP server ${name}: ${String(error)}`)
+    }
+  }
+
+  /** Stop (unload) one MCP server's mcp-client instance. */
+  async stopMcpServer(name: string): Promise<void> {
+    const id = this.mcpEntries.get(name)
+    if (id === undefined) return
+    const loader = (this.ctx as Context & { loader?: { remove: (id: string) => Promise<void> } }).loader
+    if (loader !== undefined && typeof loader.remove === 'function') {
+      try { await loader.remove(id) } catch (error) { this.ctx.logger.warn(`[switchblade] failed to stop MCP server ${name}: ${String(error)}`) }
+    }
+    this.mcpEntries.delete(name)
+  }
+
+  /** List all MCP tools currently registered on ctx.tools. */
+  listMcpTools(): McpToolInfo[] {
+    const tools = (this.ctx as Context & { tools?: { schemas: () => readonly { name: string; description?: string }[] } }).tools
+    if (tools === undefined || typeof tools.schemas !== 'function') return []
+    return tools.schemas()
+      .filter((t) => t.name.startsWith('mcp__'))
+      .map((t) => ({ name: t.name, description: t.description ?? '' }))
+  }
+
+  /** Persist the MCP server config list. */
+  private async writeMcpServers(servers: readonly McpServerConfig[]): Promise<void> {
+    await this.settingsService?.mutate(
+      settingsNamespace(SETTINGS_NAMESPACE),
+      [{ op: 'set', path: ['mcpServers'], value: servers }],
+    )
   }
 
   /** Flip one owned skill's runtime registration and persist the definition set. */
-  private async setOwnedSkill(id: string, def: SkillDefinition | undefined, enabled: boolean): Promise<'enabled' | 'disabled'> {
-    const existing = this.registrations.get(id)
+  private async setOwnedSkill(id: string, def: SkillDefinition | undefined, enabled: boolean): Promise<'enabled' | 'disabled'> {    const existing = this.registrations.get(id)
     if (existing !== undefined) {
       existing()
       this.registrations.delete(id)

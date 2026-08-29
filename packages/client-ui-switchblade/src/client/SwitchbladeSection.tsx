@@ -13,7 +13,7 @@ import { useEffect, useState } from 'react'
 import type { CSSProperties, JSX } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SwitchbladeKey } from './locales.ts'
-import type { SwitchbladeSectionInjected, SwitchbladeSectionState } from './store.ts'
+import type { McpServerRow, SwitchbladeSectionInjected, SwitchbladeSectionState } from './store.ts'
 
 export type { SwitchbladeSectionInjected } from './store.ts'
 
@@ -295,7 +295,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
   )
 }
 
-type TabKey = 'prompts' | 'skills' | 'presets'
+type TabKey = 'prompts' | 'skills' | 'presets' | 'mcp'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
 const ARMORY_VERSION = '0.5.6'
@@ -306,6 +306,7 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     useSwitchblade, t, load,
     setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt,
     installSkill, updateSkill, setSkillEnabled, uninstallSkill,
+    addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer,
   } = props
   const state = useSwitchblade((snapshot: SwitchbladeSectionState) => snapshot)
   const [promptName, setPromptName] = useState('')
@@ -322,6 +323,13 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
   const [activeTab, setActiveTab] = useState<TabKey>('prompts')
   const [editingPromptId, setEditingPromptId] = useState<string | undefined>()
   const [editingSkillName, setEditingSkillName] = useState<string | undefined>()
+  // MCP form state
+  const [mcpName, setMcpName] = useState('')
+  const [mcpTransport, setMcpTransport] = useState<'stdio' | 'streamable-http'>('stdio')
+  const [mcpCommand, setMcpCommand] = useState('')
+  const [mcpArgs, setMcpArgs] = useState('')
+  const [mcpUrl, setMcpUrl] = useState('')
+  const [editingMcpName, setEditingMcpName] = useState<string | undefined>()
 
   useEffect(() => {
     void load()
@@ -333,6 +341,36 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
 
   const setDefault = (id: string): void => {
     void setDefaultPreset(id)
+  }
+
+  /** Submit the MCP server form (add or update). */
+  const submitMcpServer = (): void => {
+    if (mcpName.trim() === '') return
+    setBusy(true)
+    const base = { serverName: mcpName.trim(), transport: mcpTransport, enabled: true }
+    const config = mcpTransport === 'stdio'
+      ? { ...base, command: mcpCommand.trim(), args: mcpArgs.trim() ? mcpArgs.trim().split(/\s+/) : [] }
+      : { ...base, url: mcpUrl.trim() }
+    const action = editingMcpName !== undefined
+      ? updateMcpServer(editingMcpName, config)
+      : addMcpServer(config)
+    void action
+      .catch((error: unknown) => console.error('[switchblade] mcp save failed', error))
+      .finally(() => {
+        setBusy(false)
+        setMcpName(''); setMcpCommand(''); setMcpArgs(''); setMcpUrl('')
+        setEditingMcpName(undefined)
+      })
+  }
+
+  /** Load one MCP server into the edit form. */
+  const startEditMcpServer = (server: McpServerRow): void => {
+    setEditingMcpName(server.serverName)
+    setMcpName(server.serverName)
+    setMcpTransport(server.transport)
+    setMcpCommand(server.command ?? '')
+    setMcpArgs((server.args ?? []).join(' '))
+    setMcpUrl(server.url ?? '')
   }
 
   /** Read a local skill .md file into the import form. */
@@ -486,6 +524,9 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
         <button style={{ ...CSS.tab, ...(activeTab === 'presets' ? CSS.tabActive : {}) }} onClick={() => setActiveTab('presets')}>
           {t('agentPresetsTitle')} ({state.status === 'loading' ? '…' : presetRows.length})
         </button>
+        <button style={{ ...CSS.tab, ...(activeTab === 'mcp' ? CSS.tabActive : {}) }} onClick={() => setActiveTab('mcp')}>
+          MCP ({state.status === 'loading' ? '…' : state.mcpServers.length})
+        </button>
       </div>
 
       {/* Fixed-height content area — every tab renders the same height. */}
@@ -604,6 +645,57 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
                     </div>
                     <div style={CSS.desc}>{row.desc}</div>
                     {!row.isDefault && <button style={CSS.actionBtn} onClick={() => setDefault(row.presetId!)}>{t('setDefault')}</button>}
+                  </div>
+                ))}
+            </div>
+          </>
+        )}
+
+        {/* ── Tab: MCP servers ─────────────────────────────────── */}
+        {activeTab === 'mcp' && (
+          <>
+            <div style={CSS.form}>
+              <input style={CSS.input} placeholder="服务器名称 (serverName)" value={mcpName} onChange={(e) => setMcpName(e.target.value)} />
+              <div style={CSS.actions}>
+                <button style={{ ...CSS.actionBtn, ...(mcpTransport === 'stdio' ? CSS.tabActive : {}) }} onClick={() => setMcpTransport('stdio')}>stdio</button>
+                <button style={{ ...CSS.actionBtn, ...(mcpTransport === 'streamable-http' ? CSS.tabActive : {}) }} onClick={() => setMcpTransport('streamable-http')}>HTTP</button>
+              </div>
+              {mcpTransport === 'stdio' ? (
+                <>
+                  <input style={CSS.input} placeholder="命令 (command, 如 npx)" value={mcpCommand} onChange={(e) => setMcpCommand(e.target.value)} />
+                  <input style={CSS.input} placeholder="参数 (args, 空格分隔)" value={mcpArgs} onChange={(e) => setMcpArgs(e.target.value)} />
+                </>
+              ) : (
+                <input style={CSS.input} placeholder="URL (如 http://localhost:3000/mcp)" value={mcpUrl} onChange={(e) => setMcpUrl(e.target.value)} />
+              )}
+              <div style={CSS.actions}>
+                <button style={CSS.actionBtn} disabled={busy} onClick={submitMcpServer}>
+                  {editingMcpName !== undefined ? '保存' : '添加'}
+                </button>
+                {editingMcpName !== undefined && (
+                  <button style={CSS.actionBtn} onClick={() => { setEditingMcpName(undefined); setMcpName(''); setMcpCommand(''); setMcpArgs(''); setMcpUrl('') }}>取消</button>
+                )}
+              </div>
+            </div>
+            <div style={CSS.scrollBox}>
+              {state.mcpServers.length === 0
+                ? <div style={CSS.empty}>暂无 MCP 服务器</div>
+                : state.mcpServers.map((server) => (
+                  <div key={server.serverName} style={CSS.card}>
+                    <div style={CSS.cardTop}>
+                      <div style={CSS.name}>{server.serverName}</div>
+                      <span style={{ ...CSS.badge, ...(server.enabled ? CSS.badgeEnabled : CSS.badgeDisabled) }}>
+                        {server.enabled ? '启用' : '停用'}
+                      </span>
+                    </div>
+                    <div style={CSS.desc}>{server.transport}{server.transport === 'stdio' ? ` · ${server.command ?? ''}` : ` · ${server.url ?? ''}`}</div>
+                    <div style={CSS.actions}>
+                      <button style={CSS.actionBtn} onClick={() => toggleMcpServer(server.serverName, !server.enabled)}>
+                        {server.enabled ? '停用' : '启用'}
+                      </button>
+                      <button style={CSS.actionBtn} onClick={() => startEditMcpServer(server)}>编辑</button>
+                      <button style={{ ...CSS.actionBtn, ...CSS.dangerBtn }} onClick={() => removeMcpServer(server.serverName)}>删除</button>
+                    </div>
                   </div>
                 ))}
             </div>

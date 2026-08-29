@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-//#region lib/types/commands.js
+//#region src/commands.ts
 /**
 * The `/sw` slash-command family.
 *
