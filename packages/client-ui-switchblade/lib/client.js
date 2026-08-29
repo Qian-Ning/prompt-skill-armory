@@ -110,23 +110,19 @@ window.__ModuleLoader__.load({
 		* remove / invoke hint). A CLI entry box offers direct command installation.
 		* @module @deepseek-ai/dsh-client-ui-switchblade
 		*/
-		const PHOSPHOR = "#58a6ff";
-		const DAMNED = "#f85149";
-		const AMBER = "#d29922";
-		const GRAY = "#30363d";
+		const PHOSPHOR = "#00ff9c";
+		const DAMNED = "#ff2b4b";
+		const AMBER = "#ffb000";
+		const GRAY = "#0f3d2c";
 		const CSS = {
-			content: {
-				minHeight: "420px",
-				display: "flex",
-				flexDirection: "column"
-			},
 			root: {
-				fontFamily: "-apple-system,'Segoe UI','Inter',Roboto,'Helvetica Neue',sans-serif",
-				background: "#0d1117",
+				fontFamily: "'JetBrains Mono','IBM Plex Mono',ui-monospace,monospace",
+				background: "#04070a",
 				color: PHOSPHOR,
 				padding: "16px",
 				border: `1px solid ${GRAY}`,
-				borderRadius: "12px",
+				boxShadow: "inset 0 0 40px rgba(0,255,156,.06), 0 0 18px rgba(0,255,156,.15)",
+				borderRadius: "2px",
 				width: "100%",
 				boxSizing: "border-box"
 			},
@@ -141,6 +137,8 @@ window.__ModuleLoader__.load({
 			title: {
 				fontSize: "14px",
 				fontWeight: 700,
+				letterSpacing: "1px",
+				textShadow: `0 0 8px ${PHOSPHOR}`,
 				display: "flex",
 				alignItems: "center",
 				gap: "6px"
@@ -160,7 +158,7 @@ window.__ModuleLoader__.load({
 				background: "transparent",
 				border: `1px solid transparent`,
 				borderBottom: "none",
-				color: "#8b949e",
+				color: "#5fb08c",
 				font: "inherit",
 				fontSize: "12px",
 				letterSpacing: "0.5px",
@@ -170,15 +168,14 @@ window.__ModuleLoader__.load({
 			tabActive: {
 				color: PHOSPHOR,
 				borderColor: GRAY,
-				background: "#161b22",
+				background: "rgba(0,40,24,.1)",
 				textShadow: `0 0 6px ${PHOSPHOR}`
 			},
 			columns: {
 				display: "grid",
 				gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-				gap: "16px",
-				alignItems: "start",
-				flex: 1
+				gap: "12px",
+				alignItems: "start"
 			},
 			column: {
 				display: "flex",
@@ -189,6 +186,7 @@ window.__ModuleLoader__.load({
 			colHeader: {
 				fontSize: "12px",
 				fontWeight: 700,
+				letterSpacing: "1px",
 				color: AMBER,
 				borderBottom: `1px solid ${GRAY}`,
 				paddingBottom: "6px",
@@ -196,7 +194,7 @@ window.__ModuleLoader__.load({
 			},
 			card: {
 				border: `1px solid ${GRAY}`,
-				background: "#161b22",
+				background: "rgba(0,40,24,.08)",
 				padding: "8px 10px"
 			},
 			cardTop: {
@@ -212,6 +210,7 @@ window.__ModuleLoader__.load({
 			},
 			badge: {
 				fontSize: "9px",
+				letterSpacing: "1px",
 				padding: "2px 6px",
 				border: "1px solid currentColor",
 				flex: "none"
@@ -221,12 +220,12 @@ window.__ModuleLoader__.load({
 			badgeInstalled: { color: AMBER },
 			desc: {
 				fontSize: "11px",
-				color: "#8b949e",
+				color: "#5fb08c",
 				marginTop: "4px"
 			},
 			invokeHint: {
 				fontSize: "10px",
-				color: "#58a6ff",
+				color: "#3f8f6a",
 				marginTop: "4px",
 				fontStyle: "italic"
 			},
@@ -246,6 +245,8 @@ window.__ModuleLoader__.load({
 				color: PHOSPHOR,
 				font: "inherit",
 				fontSize: "11px",
+				letterSpacing: "2px",
+				textTransform: "uppercase",
 				padding: "4px 10px",
 				cursor: "pointer"
 			},
@@ -255,6 +256,7 @@ window.__ModuleLoader__.load({
 				color: PHOSPHOR,
 				font: "inherit",
 				fontSize: "10px",
+				letterSpacing: "1px",
 				padding: "2px 8px",
 				cursor: "pointer",
 				marginTop: "6px"
@@ -270,10 +272,10 @@ window.__ModuleLoader__.load({
 				marginBottom: "10px",
 				padding: "10px",
 				border: `1px solid ${GRAY}`,
-				background: "#161b22"
+				background: "rgba(0,40,24,.05)"
 			},
 			input: {
-				background: "#0d1117",
+				background: "#04070a",
 				border: `1px solid ${GRAY}`,
 				color: PHOSPHOR,
 				font: "inherit",
@@ -281,7 +283,7 @@ window.__ModuleLoader__.load({
 				padding: "6px 8px"
 			},
 			textarea: {
-				background: "#0d1117",
+				background: "#04070a",
 				border: `1px solid ${GRAY}`,
 				color: PHOSPHOR,
 				font: "inherit",
@@ -301,18 +303,17 @@ window.__ModuleLoader__.load({
 				letterSpacing: "1px"
 			},
 			scrollBox: {
-				flex: 1,
+				maxHeight: "520px",
 				overflowY: "auto",
 				display: "flex",
 				flexDirection: "column",
-				gap: "10px",
-				paddingRight: "6px",
-				minHeight: "0"
+				gap: "8px",
+				paddingRight: "4px"
 			},
 			searchInput: {
-				background: "#0d1117",
+				background: "#04070a",
 				border: `1px solid ${GRAY}`,
-				color: "#8b949e",
+				color: "#5fb08c",
 				font: "inherit",
 				fontSize: "10px",
 				padding: "5px 8px",
@@ -322,9 +323,10 @@ window.__ModuleLoader__.load({
 			fileBtn: {
 				background: "transparent",
 				border: `1px dashed ${GRAY}`,
-				color: "#8b949e",
+				color: "#5fb08c",
 				font: "inherit",
 				fontSize: "10px",
+				letterSpacing: "1px",
 				padding: "8px",
 				cursor: "pointer",
 				textAlign: "center"
@@ -333,18 +335,20 @@ window.__ModuleLoader__.load({
 				border: `1px dashed ${AMBER}`,
 				padding: "8px 10px",
 				fontSize: "10px",
-				color: "#8b949e",
-				background: "#161b22"
+				color: "#5fb08c",
+				background: "rgba(255,176,0,.04)"
 			},
 			versionBadge: {
 				fontSize: "10px",
 				fontWeight: 700,
+				letterSpacing: "1px",
 				color: PHOSPHOR,
 				border: `1px solid ${PHOSPHOR}`,
-				borderRadius: "999px",
+				borderRadius: "3px",
 				padding: "1px 6px",
 				marginLeft: "6px",
-				background: "rgba(88,166,255,.08)",
+				background: "rgba(0,255,156,.08)",
+				textShadow: `0 0 6px ${PHOSPHOR}`,
 				flex: "none"
 			}
 		};
@@ -621,10 +625,7 @@ window.__ModuleLoader__.load({
 							})
 						]
 					}),
-					(0, react_jsx_runtime.jsxs)("div", {
-						style: CSS.content,
-						children: [
-							activeTab === "prompts" && (0, react_jsx_runtime.jsxs)("div", {
+					activeTab === "prompts" && (0, react_jsx_runtime.jsxs)("div", {
 						style: CSS.columns,
 						children: [(0, react_jsx_runtime.jsx)("div", {
 							style: CSS.column,
@@ -882,10 +883,7 @@ window.__ModuleLoader__.load({
 					activeTab === "presets" && (0, react_jsx_runtime.jsx)("div", {
 						style: CSS.columns,
 						children: (0, react_jsx_runtime.jsxs)("div", {
-							style: {
-								...CSS.column,
-								gridColumn: "1 / -1"
-							},
+							style: CSS.column,
 							children: [
 								(0, react_jsx_runtime.jsxs)("div", {
 									style: CSS.colHeader,
@@ -938,10 +936,8 @@ window.__ModuleLoader__.load({
 							]
 						})
 					})
-					]
-				})
-			]
-		});
+				]
+			});
 		}
 		//#endregion
 		//#region lib/types/client/store.js
