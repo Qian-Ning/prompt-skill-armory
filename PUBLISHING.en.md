@@ -63,5 +63,6 @@ The installer: locates DSH home → ensures web+desktop profiles → installs bo
 - **0.4.x** — installer multi-profile support, patch format fixes
 - **0.5.0** — client + web dual-mode panel
 - **0.5.5** — version badge rebuilt in sync
+- **0.5.6** — vertical layout, fixed height, compact cards
 
 See `CHANGELOG.md`.

@@ -63,5 +63,6 @@ npx prompt-skill-armory
 - **0.4.x** — 安装器多 profile 适配、patch 格式修复
 - **0.5.0** — 客户端+web 双模式面板
 - **0.5.5** — 版本徽章同步重建
+- **0.5.6** — 上下布局、固定高度、紧凑卡片
 
 详见 `CHANGELOG.md`。
