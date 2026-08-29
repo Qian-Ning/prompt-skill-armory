@@ -4,10 +4,10 @@ window.__ModuleLoader__.load({
 		var module = { exports: {} };
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
-		let react_jsx_runtime = require("react/jsx-runtime");
 		let react = require("react");
+		let react_jsx_runtime = require("react/jsx-runtime");
 		let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-runtime/client");
-		//#region lib/types/client/locales.js
+		//#region src/client/locales.ts
 		/**
 		* Switchblade management page dictionaries.
 		* @module @deepseek-ai/dsh-client-ui-switchblade
@@ -99,7 +99,7 @@ window.__ModuleLoader__.load({
 			cliHint: "Install via CLI (type in a session):"
 		};
 		//#endregion
-		//#region lib/types/client/SwitchbladeSection.js
+		//#region src/client/SwitchbladeSection.tsx
 		/**
 		* Prompt-SkillArmory management page.
 		*
@@ -110,19 +110,24 @@ window.__ModuleLoader__.load({
 		* remove / invoke hint). A CLI entry box offers direct command installation.
 		* @module @deepseek-ai/dsh-client-ui-switchblade
 		*/
-		const PHOSPHOR = "#00ff9c";
-		const DAMNED = "#ff2b4b";
-		const AMBER = "#ffb000";
-		const GRAY = "#0f3d2c";
+		const BG = "#0d1117";
+		const SURFACE = "#161b22";
+		const BORDER = "#30363d";
+		const TEXT = "#e6edf3";
+		const TEXT_MUTED = "#8b949e";
+		const ACCENT = "#58a6ff";
+		const SUCCESS = "#3fb950";
+		const DANGER = "#f85149";
+		const WARN = "#d29922";
+		const MONO = "'JetBrains Mono',ui-monospace,'SF Mono',Consolas,monospace";
 		const CSS = {
 			root: {
-				fontFamily: "'JetBrains Mono','IBM Plex Mono',ui-monospace,monospace",
-				background: "#04070a",
-				color: PHOSPHOR,
-				padding: "16px",
-				border: `1px solid ${GRAY}`,
-				boxShadow: "inset 0 0 40px rgba(0,255,156,.06), 0 0 18px rgba(0,255,156,.15)",
-				borderRadius: "2px",
+				fontFamily: "-apple-system,'Segoe UI','Inter',Roboto,'Helvetica Neue',sans-serif",
+				background: BG,
+				color: TEXT,
+				padding: "20px",
+				border: `1px solid ${BORDER}`,
+				borderRadius: "12px",
 				width: "100%",
 				boxSizing: "border-box"
 			},
@@ -130,72 +135,150 @@ window.__ModuleLoader__.load({
 				display: "flex",
 				alignItems: "center",
 				justifyContent: "space-between",
-				borderBottom: `1px solid ${GRAY}`,
-				paddingBottom: "8px",
-				marginBottom: "8px"
+				borderBottom: `1px solid ${BORDER}`,
+				paddingBottom: "12px",
+				marginBottom: "14px"
 			},
 			title: {
-				fontSize: "14px",
-				fontWeight: 700,
-				letterSpacing: "1px",
-				textShadow: `0 0 8px ${PHOSPHOR}`,
+				fontSize: "15px",
+				fontWeight: 600,
+				letterSpacing: "0.2px",
 				display: "flex",
 				alignItems: "center",
-				gap: "6px"
+				gap: "8px",
+				color: TEXT
 			},
-			titleAccent: {
-				color: DAMNED,
-				textShadow: `0 0 8px ${DAMNED}`
-			},
+			titleAccent: { color: ACCENT },
 			tabs: {
 				display: "flex",
-				gap: "4px",
-				borderBottom: `1px solid ${GRAY}`,
-				marginBottom: "12px",
+				gap: "2px",
+				borderBottom: `1px solid ${BORDER}`,
+				marginBottom: "14px",
 				flexWrap: "wrap"
 			},
 			tab: {
 				background: "transparent",
-				border: `1px solid transparent`,
-				borderBottom: "none",
-				color: "#5fb08c",
+				border: "none",
+				borderBottom: "2px solid transparent",
+				color: TEXT_MUTED,
 				font: "inherit",
-				fontSize: "12px",
-				letterSpacing: "0.5px",
-				padding: "6px 10px",
-				cursor: "pointer"
+				fontSize: "13px",
+				fontWeight: 500,
+				padding: "8px 12px",
+				cursor: "pointer",
+				transition: "color .15s ease, border-color .15s ease"
 			},
 			tabActive: {
-				color: PHOSPHOR,
-				borderColor: GRAY,
-				background: "rgba(0,40,24,.1)",
-				textShadow: `0 0 6px ${PHOSPHOR}`
+				color: TEXT,
+				borderBottomColor: ACCENT
 			},
-			columns: {
-				display: "grid",
-				gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-				gap: "12px",
-				alignItems: "start"
-			},
-			column: {
+			content: {
+				height: "480px",
 				display: "flex",
 				flexDirection: "column",
-				gap: "10px",
-				minWidth: "0"
+				gap: "12px"
 			},
-			colHeader: {
+			form: {
+				display: "flex",
+				flexDirection: "column",
+				gap: "8px",
+				padding: "12px",
+				border: `1px solid ${BORDER}`,
+				borderRadius: "10px",
+				background: SURFACE
+			},
+			input: {
+				background: BG,
+				border: `1px solid ${BORDER}`,
+				color: TEXT,
+				font: "inherit",
+				fontSize: "13px",
+				padding: "8px 10px",
+				borderRadius: "6px",
+				outline: "none",
+				transition: "border-color .15s ease"
+			},
+			textarea: {
+				background: BG,
+				border: `1px solid ${BORDER}`,
+				color: TEXT,
+				font: "inherit",
+				fontSize: "13px",
+				padding: "8px 10px",
+				borderRadius: "6px",
+				minHeight: "60px",
+				resize: "vertical",
+				outline: "none",
+				transition: "border-color .15s ease"
+			},
+			actions: {
+				display: "flex",
+				gap: "8px",
+				flexWrap: "wrap"
+			},
+			actionBtn: {
+				background: "transparent",
+				border: `1px solid ${BORDER}`,
+				color: TEXT_MUTED,
+				font: "inherit",
 				fontSize: "12px",
-				fontWeight: 700,
-				letterSpacing: "1px",
-				color: AMBER,
-				borderBottom: `1px solid ${GRAY}`,
-				paddingBottom: "6px",
-				marginBottom: "2px"
+				padding: "4px 10px",
+				borderRadius: "6px",
+				cursor: "pointer",
+				transition: "color .15s ease, border-color .15s ease, background .15s ease"
+			},
+			dangerBtn: {
+				borderColor: "rgba(248,81,73,.4)",
+				color: DANGER
+			},
+			fileBtn: {
+				background: "transparent",
+				border: `1px dashed ${BORDER}`,
+				color: TEXT_MUTED,
+				font: "inherit",
+				fontSize: "12px",
+				padding: "10px",
+				borderRadius: "8px",
+				cursor: "pointer",
+				textAlign: "center",
+				transition: "color .15s ease, border-color .15s ease"
+			},
+			cliBox: {
+				border: `1px solid ${BORDER}`,
+				padding: "10px 12px",
+				fontSize: "12px",
+				color: TEXT_MUTED,
+				background: SURFACE,
+				borderRadius: "8px"
+			},
+			searchInput: {
+				background: BG,
+				border: `1px solid ${BORDER}`,
+				color: TEXT_MUTED,
+				font: "inherit",
+				fontSize: "12px",
+				padding: "7px 10px",
+				borderRadius: "6px",
+				width: "100%",
+				boxSizing: "border-box",
+				outline: "none",
+				transition: "border-color .15s ease"
+			},
+			scrollBox: {
+				flex: 1,
+				overflowY: "auto",
+				display: "flex",
+				flexDirection: "column",
+				gap: "8px",
+				paddingRight: "6px",
+				minHeight: "0"
 			},
 			card: {
-				border: `1px solid ${GRAY}`,
-				background: "rgba(0,40,24,.08)",
-				padding: "8px 10px"
+				border: `1px solid ${BORDER}`,
+				background: SURFACE,
+				borderRadius: "10px",
+				padding: "10px 12px",
+				transition: "border-color .15s ease, background .15s ease"
 			},
 			cardTop: {
 				display: "flex",
@@ -204,157 +287,84 @@ window.__ModuleLoader__.load({
 				gap: "8px"
 			},
 			name: {
-				fontSize: "12px",
-				fontWeight: 700,
-				wordBreak: "break-all"
+				fontSize: "13px",
+				fontWeight: 600,
+				wordBreak: "break-all",
+				color: TEXT
 			},
 			badge: {
-				fontSize: "9px",
-				letterSpacing: "1px",
-				padding: "2px 6px",
-				border: "1px solid currentColor",
+				fontSize: "11px",
+				fontWeight: 500,
+				padding: "2px 10px",
+				borderRadius: "999px",
 				flex: "none"
 			},
-			badgeEnabled: { color: PHOSPHOR },
-			badgeDisabled: { color: DAMNED },
-			badgeInstalled: { color: AMBER },
+			badgeEnabled: {
+				color: SUCCESS,
+				background: "rgba(63,185,80,.12)"
+			},
+			badgeDisabled: {
+				color: TEXT_MUTED,
+				background: "rgba(139,148,158,.12)"
+			},
+			badgeInstalled: {
+				color: WARN,
+				background: "rgba(210,153,34,.12)"
+			},
 			desc: {
-				fontSize: "11px",
-				color: "#5fb08c",
-				marginTop: "4px"
+				fontSize: "12px",
+				color: TEXT_MUTED,
+				marginTop: "6px",
+				lineHeight: "1.5"
 			},
 			invokeHint: {
-				fontSize: "10px",
-				color: "#3f8f6a",
-				marginTop: "4px",
-				fontStyle: "italic"
+				fontSize: "11px",
+				color: ACCENT,
+				marginTop: "6px",
+				fontFamily: MONO
 			},
 			empty: {
-				fontSize: "11px",
-				color: GRAY,
-				padding: "8px 0"
+				fontSize: "12px",
+				color: TEXT_MUTED,
+				padding: "12px 0",
+				textAlign: "center"
 			},
 			error: {
-				color: DAMNED,
-				fontSize: "11px",
-				padding: "8px 0"
+				color: DANGER,
+				fontSize: "12px",
+				padding: "10px 0"
 			},
 			refreshBtn: {
 				background: "transparent",
-				border: `1px solid ${GRAY}`,
-				color: PHOSPHOR,
+				border: `1px solid ${BORDER}`,
+				color: TEXT_MUTED,
 				font: "inherit",
-				fontSize: "11px",
-				letterSpacing: "2px",
-				textTransform: "uppercase",
-				padding: "4px 10px",
-				cursor: "pointer"
-			},
-			actionBtn: {
-				background: "transparent",
-				border: `1px solid ${GRAY}`,
-				color: PHOSPHOR,
-				font: "inherit",
-				fontSize: "10px",
-				letterSpacing: "1px",
-				padding: "2px 8px",
+				fontSize: "12px",
+				padding: "6px 12px",
+				borderRadius: "6px",
 				cursor: "pointer",
-				marginTop: "6px"
-			},
-			dangerBtn: {
-				borderColor: DAMNED,
-				color: DAMNED
-			},
-			form: {
-				display: "flex",
-				flexDirection: "column",
-				gap: "6px",
-				marginBottom: "10px",
-				padding: "10px",
-				border: `1px solid ${GRAY}`,
-				background: "rgba(0,40,24,.05)"
-			},
-			input: {
-				background: "#04070a",
-				border: `1px solid ${GRAY}`,
-				color: PHOSPHOR,
-				font: "inherit",
-				fontSize: "11px",
-				padding: "6px 8px"
-			},
-			textarea: {
-				background: "#04070a",
-				border: `1px solid ${GRAY}`,
-				color: PHOSPHOR,
-				font: "inherit",
-				fontSize: "11px",
-				padding: "6px 8px",
-				minHeight: "80px",
-				resize: "vertical"
-			},
-			actions: {
-				display: "flex",
-				gap: "6px",
-				flexWrap: "wrap"
+				transition: "color .15s ease, border-color .15s ease"
 			},
 			hint: {
-				color: GRAY,
-				fontSize: "9px",
-				letterSpacing: "1px"
-			},
-			scrollBox: {
-				maxHeight: "520px",
-				overflowY: "auto",
-				display: "flex",
-				flexDirection: "column",
-				gap: "8px",
-				paddingRight: "4px"
-			},
-			searchInput: {
-				background: "#04070a",
-				border: `1px solid ${GRAY}`,
-				color: "#5fb08c",
-				font: "inherit",
-				fontSize: "10px",
-				padding: "5px 8px",
-				width: "100%",
-				boxSizing: "border-box"
-			},
-			fileBtn: {
-				background: "transparent",
-				border: `1px dashed ${GRAY}`,
-				color: "#5fb08c",
-				font: "inherit",
-				fontSize: "10px",
-				letterSpacing: "1px",
-				padding: "8px",
-				cursor: "pointer",
-				textAlign: "center"
-			},
-			cliBox: {
-				border: `1px dashed ${AMBER}`,
-				padding: "8px 10px",
-				fontSize: "10px",
-				color: "#5fb08c",
-				background: "rgba(255,176,0,.04)"
+				color: TEXT_MUTED,
+				fontSize: "11px"
 			},
 			versionBadge: {
-				fontSize: "10px",
-				fontWeight: 700,
-				letterSpacing: "1px",
-				color: PHOSPHOR,
-				border: `1px solid ${PHOSPHOR}`,
-				borderRadius: "3px",
-				padding: "1px 6px",
-				marginLeft: "6px",
-				background: "rgba(0,255,156,.08)",
-				textShadow: `0 0 6px ${PHOSPHOR}`,
+				fontSize: "11px",
+				fontWeight: 600,
+				letterSpacing: "0.3px",
+				color: ACCENT,
+				border: `1px solid ${BORDER}`,
+				borderRadius: "999px",
+				padding: "2px 10px",
+				marginLeft: "8px",
+				background: "rgba(88,166,255,.08)",
 				flex: "none"
 			}
 		};
 		/** Open-book glyph. */
 		function BookIcon({ size = 16 }) {
-			return (0, react_jsx_runtime.jsxs)("svg", {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
 				width: size,
 				height: size,
 				viewBox: "0 0 16 16",
@@ -362,17 +372,17 @@ window.__ModuleLoader__.load({
 				style: { flex: "none" },
 				"aria-hidden": "true",
 				children: [
-					(0, react_jsx_runtime.jsx)("path", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
 						d: "M7.5 3.2C6.2 2.4 4.6 2.2 2.8 2.5c-.5.08-.8.5-.8 1v7.6c0 .4.3.7.7.7 1.7-.2 3.2.1 4.8 1V3.2z",
 						fill: "currentColor",
 						opacity: "0.55"
 					}),
-					(0, react_jsx_runtime.jsx)("path", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
 						d: "M8.5 3.2c1.3-.8 2.9-1 4.7-.7.5.08.8.5.8 1v7.6c0 .4-.3.7-.7.7-1.7-.2-3.2.1-4.8 1V3.2z",
 						fill: "currentColor",
 						opacity: "0.85"
 					}),
-					(0, react_jsx_runtime.jsx)("path", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
 						d: "M8 3.2v10.3",
 						stroke: "currentColor",
 						strokeWidth: "0.7"
@@ -546,33 +556,33 @@ window.__ModuleLoader__.load({
 			const filteredSkills = allSkillRows.filter((r) => match(r, skillQuery));
 			const badge = (state) => state === "enabled" ? CSS.badgeEnabled : state === "disabled" ? CSS.badgeDisabled : CSS.badgeInstalled;
 			const label = (state) => state === "enabled" ? t("enabled") : state === "disabled" ? t("disabled") : t("installed");
-			return (0, react_jsx_runtime.jsxs)("div", {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				style: CSS.root,
 				children: [
-					(0, react_jsx_runtime.jsxs)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: CSS.head,
-						children: [(0, react_jsx_runtime.jsxs)("div", {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							style: CSS.title,
 							children: [
-								(0, react_jsx_runtime.jsx)(BookIcon, { size: 16 }),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BookIcon, { size: 16 }),
 								" ",
-								(0, react_jsx_runtime.jsx)("span", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									style: CSS.titleAccent,
 									children: "Prompt•Skill"
 								}),
 								"-Armory",
-								(0, react_jsx_runtime.jsxs)("span", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									style: CSS.versionBadge,
 									children: ["v", ARMORY_VERSION]
 								})
 							]
-						}), (0, react_jsx_runtime.jsx)("button", {
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							style: CSS.refreshBtn,
 							onClick: refresh,
 							children: t("refresh")
 						})]
 					}),
-					state.status === "error" && (0, react_jsx_runtime.jsxs)("div", {
+					state.status === "error" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: CSS.error,
 						children: [
 							"✖ ",
@@ -581,10 +591,10 @@ window.__ModuleLoader__.load({
 							state.message
 						]
 					}),
-					(0, react_jsx_runtime.jsxs)("div", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						style: CSS.tabs,
 						children: [
-							(0, react_jsx_runtime.jsxs)("button", {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 								style: {
 									...CSS.tab,
 									...activeTab === "prompts" ? CSS.tabActive : {}
@@ -597,7 +607,7 @@ window.__ModuleLoader__.load({
 									")"
 								]
 							}),
-							(0, react_jsx_runtime.jsxs)("button", {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 								style: {
 									...CSS.tab,
 									...activeTab === "skills" ? CSS.tabActive : {}
@@ -610,7 +620,7 @@ window.__ModuleLoader__.load({
 									")"
 								]
 							}),
-							(0, react_jsx_runtime.jsxs)("button", {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 								style: {
 									...CSS.tab,
 									...activeTab === "presets" ? CSS.tabActive : {}
@@ -625,267 +635,259 @@ window.__ModuleLoader__.load({
 							})
 						]
 					}),
-					activeTab === "prompts" && (0, react_jsx_runtime.jsxs)("div", {
-						style: CSS.columns,
-						children: [(0, react_jsx_runtime.jsx)("div", {
-							style: CSS.column,
-							children: (0, react_jsx_runtime.jsxs)("div", {
-								style: CSS.form,
-								children: [
-									(0, react_jsx_runtime.jsx)("input", {
-										style: CSS.input,
-										placeholder: t("promptNamePlaceholder"),
-										value: promptName,
-										onChange: (e) => setPromptName(e.target.value)
-									}),
-									(0, react_jsx_runtime.jsx)("input", {
-										style: CSS.input,
-										placeholder: t("promptDescPlaceholder"),
-										value: promptDesc,
-										onChange: (e) => setPromptDesc(e.target.value)
-									}),
-									(0, react_jsx_runtime.jsx)("textarea", {
-										style: CSS.textarea,
-										placeholder: t("promptContentPlaceholder"),
-										value: promptContent,
-										onChange: (e) => setPromptContent(e.target.value)
-									}),
-									(0, react_jsx_runtime.jsxs)("div", {
-										style: CSS.actions,
-										children: [(0, react_jsx_runtime.jsx)("button", {
-											style: CSS.actionBtn,
-											disabled: busy,
-											onClick: submitPrompt,
-											children: editingPromptId !== void 0 ? t("save") : t("addPrompt")
-										}), editingPromptId !== void 0 && (0, react_jsx_runtime.jsx)("button", {
-											style: CSS.actionBtn,
-											onClick: () => {
-												setEditingPromptId(void 0);
-												setPromptName("");
-												setPromptDesc("");
-												setPromptContent("");
-											},
-											children: t("cancel")
-										})]
-									})
-								]
-							})
-						}), (0, react_jsx_runtime.jsxs)("div", {
-							style: CSS.column,
-							children: [(0, react_jsx_runtime.jsx)("input", {
-								style: CSS.searchInput,
-								placeholder: t("searchPlaceholder"),
-								value: promptQuery,
-								onChange: (e) => setPromptQuery(e.target.value)
-							}), (0, react_jsx_runtime.jsx)("div", {
-								style: CSS.scrollBox,
-								children: filteredPrompts.length === 0 ? (0, react_jsx_runtime.jsx)("div", {
-									style: CSS.empty,
-									children: t("empty")
-								}) : filteredPrompts.map((row) => (0, react_jsx_runtime.jsxs)("div", {
-									style: CSS.card,
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						style: CSS.content,
+						children: [
+							activeTab === "prompts" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: CSS.form,
 									children: [
-										(0, react_jsx_runtime.jsxs)("div", {
-											style: CSS.cardTop,
-											children: [(0, react_jsx_runtime.jsxs)("div", {
-												style: CSS.name,
-												children: [row.isDefault ? "★ " : "", row.name]
-											}), (0, react_jsx_runtime.jsx)("span", {
-												style: {
-													...CSS.badge,
-													...row.state === "enabled" ? CSS.badgeEnabled : CSS.badgeDisabled
-												},
-												children: row.state === "enabled" ? t("enabled") : t("disabled")
-											})]
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											style: CSS.input,
+											placeholder: t("promptNamePlaceholder"),
+											value: promptName,
+											onChange: (e) => setPromptName(e.target.value)
 										}),
-										(0, react_jsx_runtime.jsx)("div", {
-											style: CSS.desc,
-											children: row.desc || row.content?.slice(0, 80)
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											style: CSS.input,
+											placeholder: t("promptDescPlaceholder"),
+											value: promptDesc,
+											onChange: (e) => setPromptDesc(e.target.value)
 										}),
-										(0, react_jsx_runtime.jsxs)("div", {
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+											style: CSS.textarea,
+											placeholder: t("promptContentPlaceholder"),
+											value: promptContent,
+											onChange: (e) => setPromptContent(e.target.value)
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											style: CSS.actions,
-											children: [
-												!row.isDefault && (0, react_jsx_runtime.jsx)("button", {
-													style: CSS.actionBtn,
-													onClick: () => markDefault(row.promptId),
-													children: t("setDefault")
-												}),
-												(0, react_jsx_runtime.jsx)("button", {
-													style: CSS.actionBtn,
-													onClick: () => togglePrompt(row.promptId, !row.promptEnabled),
-													children: row.state === "enabled" ? t("disable") : t("enable")
-												}),
-												(0, react_jsx_runtime.jsx)("button", {
-													style: CSS.actionBtn,
-													onClick: () => startEditPrompt(row),
-													children: t("edit")
-												}),
-												(0, react_jsx_runtime.jsx)("button", {
-													style: {
-														...CSS.actionBtn,
-														...CSS.dangerBtn
-													},
-													onClick: () => removePrompt(row.promptId),
-													children: t("delete")
-												})
-											]
-										})
-									]
-								}, row.id))
-							})]
-						})]
-					}),
-					activeTab === "skills" && (0, react_jsx_runtime.jsxs)("div", {
-						style: CSS.columns,
-						children: [(0, react_jsx_runtime.jsxs)("div", {
-							style: CSS.column,
-							children: [(0, react_jsx_runtime.jsxs)("div", {
-								style: CSS.form,
-								children: [
-									(0, react_jsx_runtime.jsxs)("label", {
-										style: CSS.fileBtn,
-										children: [pickedFile !== "" ? `📄 ${pickedFile}` : t("pickSkillFile"), (0, react_jsx_runtime.jsx)("input", {
-											type: "file",
-											accept: ".md,.markdown,text/markdown,text/plain",
-											style: { display: "none" },
-											onChange: (e) => onSkillFile(e.target.files?.[0])
-										})]
-									}),
-									(0, react_jsx_runtime.jsx)("input", {
-										style: CSS.input,
-										placeholder: t("skillNamePlaceholder"),
-										value: skillName,
-										onChange: (e) => setSkillName(e.target.value)
-									}),
-									(0, react_jsx_runtime.jsx)("input", {
-										style: CSS.input,
-										placeholder: t("skillDescPlaceholder"),
-										value: skillDesc,
-										onChange: (e) => setSkillDesc(e.target.value)
-									}),
-									(0, react_jsx_runtime.jsx)("textarea", {
-										style: CSS.textarea,
-										placeholder: t("skillContentPlaceholder"),
-										value: skillContent,
-										onChange: (e) => setSkillContent(e.target.value)
-									}),
-									(0, react_jsx_runtime.jsxs)("div", {
-										style: CSS.actions,
-										children: [(0, react_jsx_runtime.jsx)("button", {
-											style: CSS.actionBtn,
-											disabled: busy,
-											onClick: submitSkill,
-											children: editingSkillName !== void 0 ? t("save") : t("addSkill")
-										}), editingSkillName !== void 0 && (0, react_jsx_runtime.jsx)("button", {
-											style: CSS.actionBtn,
-											onClick: () => {
-												setEditingSkillName(void 0);
-												setSkillName("");
-												setSkillDesc("");
-												setSkillContent("");
-											},
-											children: t("cancel")
-										})]
-									})
-								]
-							}), (0, react_jsx_runtime.jsxs)("div", {
-								style: CSS.cliBox,
-								children: [
-									(0, react_jsx_runtime.jsx)("div", {
-										style: { marginBottom: "4px" },
-										children: t("cliHint")
-									}),
-									(0, react_jsx_runtime.jsx)("code", {
-										style: {
-											fontSize: "10px",
-											color: PHOSPHOR
-										},
-										children: "/armory-skill-dir <目录>"
-									}),
-									(0, react_jsx_runtime.jsx)("br", {}),
-									(0, react_jsx_runtime.jsx)("code", {
-										style: {
-											fontSize: "10px",
-											color: PHOSPHOR
-										},
-										children: "/armory-install-zip <zip路径>"
-									})
-								]
-							})]
-						}), (0, react_jsx_runtime.jsxs)("div", {
-							style: CSS.column,
-							children: [(0, react_jsx_runtime.jsx)("input", {
-								style: CSS.searchInput,
-								placeholder: t("searchPlaceholder"),
-								value: skillQuery,
-								onChange: (e) => setSkillQuery(e.target.value)
-							}), (0, react_jsx_runtime.jsx)("div", {
-								style: CSS.scrollBox,
-								children: filteredSkills.length === 0 ? (0, react_jsx_runtime.jsx)("div", {
-									style: CSS.empty,
-									children: t("empty")
-								}) : filteredSkills.map((row) => (0, react_jsx_runtime.jsxs)("div", {
-									style: CSS.card,
-									children: [
-										(0, react_jsx_runtime.jsxs)("div", {
-											style: CSS.cardTop,
-											children: [(0, react_jsx_runtime.jsx)("div", {
-												style: CSS.name,
-												children: row.name
-											}), (0, react_jsx_runtime.jsx)("span", {
-												style: {
-													...CSS.badge,
-													...badge(row.state)
-												},
-												children: label(row.state)
-											})]
-										}),
-										(0, react_jsx_runtime.jsx)("div", {
-											style: CSS.desc,
-											children: row.desc
-										}),
-										(0, react_jsx_runtime.jsxs)("div", {
-											style: CSS.invokeHint,
-											children: ["/ ", row.name]
-										}),
-										(0, react_jsx_runtime.jsx)("div", {
-											style: CSS.actions,
-											children: row.source === "scanned" ? (0, react_jsx_runtime.jsx)("button", {
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												style: CSS.actionBtn,
-												onClick: () => adoptSkill(row.name),
-												children: t("manage")
-											}) : (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-												(0, react_jsx_runtime.jsx)("button", {
-													style: CSS.actionBtn,
-													onClick: () => toggleSkill(row.installedName, !row.skillEnabled),
-													children: row.state === "enabled" ? t("disable") : t("enable")
-												}),
-												(0, react_jsx_runtime.jsx)("button", {
-													style: CSS.actionBtn,
-													onClick: () => startEditSkill(row),
-													children: t("edit")
-												}),
-												(0, react_jsx_runtime.jsx)("button", {
-													style: {
-														...CSS.actionBtn,
-														...CSS.dangerBtn
-													},
-													onClick: () => removeSkill(row.installedName),
-													children: t("uninstall")
-												})
-											] })
+												disabled: busy,
+												onClick: submitPrompt,
+												children: editingPromptId !== void 0 ? t("save") : t("addPrompt")
+											}), editingPromptId !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												style: CSS.actionBtn,
+												onClick: () => {
+													setEditingPromptId(void 0);
+													setPromptName("");
+													setPromptDesc("");
+													setPromptContent("");
+												},
+												children: t("cancel")
+											})]
 										})
 									]
-								}, row.key))
-							})]
-						})]
-					}),
-					activeTab === "presets" && (0, react_jsx_runtime.jsx)("div", {
-						style: CSS.columns,
-						children: (0, react_jsx_runtime.jsxs)("div", {
-							style: CSS.column,
-							children: [
-								(0, react_jsx_runtime.jsxs)("div", {
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									style: CSS.searchInput,
+									placeholder: t("searchPlaceholder"),
+									value: promptQuery,
+									onChange: (e) => setPromptQuery(e.target.value)
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									style: CSS.scrollBox,
+									children: filteredPrompts.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										style: CSS.empty,
+										children: t("empty")
+									}) : filteredPrompts.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: CSS.card,
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.cardTop,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+													style: CSS.name,
+													children: [row.isDefault ? "★ " : "", row.name]
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													style: {
+														...CSS.badge,
+														...row.state === "enabled" ? CSS.badgeEnabled : CSS.badgeDisabled
+													},
+													children: row.state === "enabled" ? t("enabled") : t("disabled")
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+												style: CSS.desc,
+												children: row.desc || row.content?.slice(0, 80)
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.actions,
+												children: [
+													!row.isDefault && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+														style: CSS.actionBtn,
+														onClick: () => markDefault(row.promptId),
+														children: t("setDefault")
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+														style: CSS.actionBtn,
+														onClick: () => togglePrompt(row.promptId, !row.promptEnabled),
+														children: row.state === "enabled" ? t("disable") : t("enable")
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+														style: CSS.actionBtn,
+														onClick: () => startEditPrompt(row),
+														children: t("edit")
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+														style: {
+															...CSS.actionBtn,
+															...CSS.dangerBtn
+														},
+														onClick: () => removePrompt(row.promptId),
+														children: t("delete")
+													})
+												]
+											})
+										]
+									}, row.id))
+								})
+							] }),
+							activeTab === "skills" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: CSS.form,
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+											style: CSS.fileBtn,
+											children: [pickedFile !== "" ? `📄 ${pickedFile}` : t("pickSkillFile"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+												type: "file",
+												accept: ".md,.markdown,text/markdown,text/plain",
+												style: { display: "none" },
+												onChange: (e) => onSkillFile(e.target.files?.[0])
+											})]
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											style: CSS.input,
+											placeholder: t("skillNamePlaceholder"),
+											value: skillName,
+											onChange: (e) => setSkillName(e.target.value)
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											style: CSS.input,
+											placeholder: t("skillDescPlaceholder"),
+											value: skillDesc,
+											onChange: (e) => setSkillDesc(e.target.value)
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+											style: CSS.textarea,
+											placeholder: t("skillContentPlaceholder"),
+											value: skillContent,
+											onChange: (e) => setSkillContent(e.target.value)
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: CSS.actions,
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												style: CSS.actionBtn,
+												disabled: busy,
+												onClick: submitSkill,
+												children: editingSkillName !== void 0 ? t("save") : t("addSkill")
+											}), editingSkillName !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												style: CSS.actionBtn,
+												onClick: () => {
+													setEditingSkillName(void 0);
+													setSkillName("");
+													setSkillDesc("");
+													setSkillContent("");
+												},
+												children: t("cancel")
+											})]
+										})
+									]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									style: CSS.cliBox,
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+											style: { marginBottom: "4px" },
+											children: t("cliHint")
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", {
+											style: {
+												fontSize: "11px",
+												color: ACCENT,
+												fontFamily: MONO
+											},
+											children: "/armory-skill-dir <目录>"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", {
+											style: {
+												fontSize: "11px",
+												color: ACCENT,
+												fontFamily: MONO
+											},
+											children: "/armory-install-zip <zip路径>"
+										})
+									]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									style: CSS.searchInput,
+									placeholder: t("searchPlaceholder"),
+									value: skillQuery,
+									onChange: (e) => setSkillQuery(e.target.value)
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									style: CSS.scrollBox,
+									children: filteredSkills.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										style: CSS.empty,
+										children: t("empty")
+									}) : filteredSkills.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: CSS.card,
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.cardTop,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: CSS.name,
+													children: row.name
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													style: {
+														...CSS.badge,
+														...badge(row.state)
+													},
+													children: label(row.state)
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+												style: CSS.desc,
+												children: row.desc
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.invokeHint,
+												children: ["/ ", row.name]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+												style: CSS.actions,
+												children: row.source === "scanned" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													style: CSS.actionBtn,
+													onClick: () => adoptSkill(row.name),
+													children: t("manage")
+												}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+														style: CSS.actionBtn,
+														onClick: () => toggleSkill(row.installedName, !row.skillEnabled),
+														children: row.state === "enabled" ? t("disable") : t("enable")
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+														style: CSS.actionBtn,
+														onClick: () => startEditSkill(row),
+														children: t("edit")
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+														style: {
+															...CSS.actionBtn,
+															...CSS.dangerBtn
+														},
+														onClick: () => removeSkill(row.installedName),
+														children: t("uninstall")
+													})
+												] })
+											})
+										]
+									}, row.key))
+								})
+							] }),
+							activeTab === "presets" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									style: CSS.colHeader,
 									children: [
 										t("agentPresetsTitle"),
@@ -894,26 +896,26 @@ window.__ModuleLoader__.load({
 										")"
 									]
 								}),
-								(0, react_jsx_runtime.jsx)("input", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 									style: CSS.searchInput,
 									placeholder: t("searchPlaceholder"),
 									value: presetQuery,
 									onChange: (e) => setPresetQuery(e.target.value)
 								}),
-								(0, react_jsx_runtime.jsx)("div", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									style: CSS.scrollBox,
-									children: filteredPresets.length === 0 ? (0, react_jsx_runtime.jsx)("div", {
+									children: filteredPresets.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 										style: CSS.empty,
 										children: t("empty")
-									}) : filteredPresets.map((row) => (0, react_jsx_runtime.jsxs)("div", {
+									}) : filteredPresets.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										style: CSS.card,
 										children: [
-											(0, react_jsx_runtime.jsxs)("div", {
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 												style: CSS.cardTop,
-												children: [(0, react_jsx_runtime.jsxs)("div", {
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 													style: CSS.name,
 													children: [row.isDefault ? "★ " : "", row.name]
-												}), (0, react_jsx_runtime.jsx)("span", {
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 													style: {
 														...CSS.badge,
 														...badge(row.state)
@@ -921,11 +923,11 @@ window.__ModuleLoader__.load({
 													children: label(row.state)
 												})]
 											}),
-											(0, react_jsx_runtime.jsx)("div", {
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 												style: CSS.desc,
 												children: row.desc
 											}),
-											!row.isDefault && (0, react_jsx_runtime.jsx)("button", {
+											!row.isDefault && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												style: CSS.actionBtn,
 												onClick: () => setDefault(row.presetId),
 												children: t("setDefault")
@@ -933,20 +935,14 @@ window.__ModuleLoader__.load({
 										]
 									}, row.id))
 								})
-							]
-						})
+							] })
+						]
 					})
 				]
 			});
 		}
 		//#endregion
-		//#region lib/types/client/store.js
-		/**
-		* Switchblade section data controller: reads the skill catalog and the prompt
-		* preset roster through the existing connection RPC surface (no Typert
-		* generation needed — these methods are already wired).
-		* @module @deepseek-ai/dsh-client-ui-switchblade
-		*/
+		//#region src/client/store.ts
 		/** Initial (idle) state. */
 		const IDLE = {
 			status: "idle",
@@ -1219,13 +1215,7 @@ window.__ModuleLoader__.load({
 			}
 		};
 		//#endregion
-		//#region lib/types/client/index.js
-		/**
-		* Switchblade management page, browser half: registers the `settings.section`
-		* navigation entry and renders the edgelord panel from the connection RPC
-		* state. Global scope (root) — one management seat for every session.
-		* @module @deepseek-ai/dsh-client-ui-switchblade
-		*/
+		//#region src/client/index.ts
 		/** Required services (cordis fiber inject). */
 		const inject = [
 			"slots",

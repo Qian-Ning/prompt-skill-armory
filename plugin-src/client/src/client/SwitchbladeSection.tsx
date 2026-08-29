@@ -37,7 +37,6 @@ export type SwitchbladeSectionProps =
  * ──────────────────────────────────────────────────────────────── */
 const BG = '#0d1117'          // root background
 const SURFACE = '#161b22'     // card / form surface
-const SURFACE2 = '#1c2128'    // raised surface
 const BORDER = '#30363d'      // hairline border
 const TEXT = '#e6edf3'        // primary text
 const TEXT_MUTED = '#8b949e'  // secondary text
@@ -104,7 +103,7 @@ const CSS: Record<string, CSSProperties> = {
   },
   /* Fixed-height content area so every tab renders the same height. */
   content: {
-    minHeight: '480px',
+    height: '480px',
     display: 'flex',
     flexDirection: 'column' as const,
     gap: '12px',
@@ -113,7 +112,7 @@ const CSS: Record<string, CSSProperties> = {
     display: 'flex',
     flexDirection: 'column' as const,
     gap: '8px',
-    padding: '14px',
+    padding: '12px',
     border: `1px solid ${BORDER}`,
     borderRadius: '10px',
     background: SURFACE,
@@ -137,7 +136,7 @@ const CSS: Record<string, CSSProperties> = {
     fontSize: '13px',
     padding: '8px 10px',
     borderRadius: '6px',
-    minHeight: '80px',
+    minHeight: '60px',
     resize: 'vertical' as const,
     outline: 'none',
     transition: 'border-color .15s ease',
@@ -200,7 +199,7 @@ const CSS: Record<string, CSSProperties> = {
     overflowY: 'auto' as const,
     display: 'flex',
     flexDirection: 'column' as const,
-    gap: '10px',
+    gap: '8px',
     paddingRight: '6px',
     minHeight: '0',
   },
@@ -208,7 +207,7 @@ const CSS: Record<string, CSSProperties> = {
     border: `1px solid ${BORDER}`,
     background: SURFACE,
     borderRadius: '10px',
-    padding: '12px 14px',
+    padding: '10px 12px',
     transition: 'border-color .15s ease, background .15s ease',
   },
   cardTop: {
