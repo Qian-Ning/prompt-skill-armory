@@ -65,7 +65,7 @@ const CSS: Record<string, CSSProperties> = {
     justifyContent: 'space-between',
     borderBottom: `1px solid ${BORDER}`,
     paddingBottom: '12px',
-    marginBottom: '16px',
+    marginBottom: '14px',
   },
   title: {
     fontSize: '15px',
@@ -83,7 +83,7 @@ const CSS: Record<string, CSSProperties> = {
     display: 'flex',
     gap: '2px',
     borderBottom: `1px solid ${BORDER}`,
-    marginBottom: '16px',
+    marginBottom: '14px',
     flexWrap: 'wrap' as const,
   },
   tab: {
@@ -102,11 +102,18 @@ const CSS: Record<string, CSSProperties> = {
     color: TEXT,
     borderBottomColor: ACCENT,
   },
+  /* Fixed-height content area so every tab renders the same height. */
+  content: {
+    minHeight: '420px',
+    display: 'flex',
+    flexDirection: 'column' as const,
+  },
   columns: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
     gap: '16px',
     alignItems: 'start',
+    flex: 1,
   },
   column: {
     display: 'flex',
@@ -246,12 +253,13 @@ const CSS: Record<string, CSSProperties> = {
     fontSize: '11px',
   },
   scrollBox: {
-    maxHeight: '520px',
+    flex: 1,
     overflowY: 'auto' as const,
     display: 'flex',
     flexDirection: 'column' as const,
     gap: '10px',
     paddingRight: '6px',
+    minHeight: '0',
   },
   searchInput: {
     background: BG,
@@ -504,137 +512,140 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
         </button>
       </div>
 
-      {/* ── Tab: prompts ─────────────────────────────────────── */}
-      {activeTab === 'prompts' && (
-        <div style={CSS.columns}>
-          <div style={CSS.column}>
-            <div style={CSS.form}>
-              <input style={CSS.input} placeholder={t('promptNamePlaceholder')} value={promptName} onChange={(e) => setPromptName(e.target.value)} />
-              <input style={CSS.input} placeholder={t('promptDescPlaceholder')} value={promptDesc} onChange={(e) => setPromptDesc(e.target.value)} />
-              <textarea style={CSS.textarea} placeholder={t('promptContentPlaceholder')} value={promptContent} onChange={(e) => setPromptContent(e.target.value)} />
-              <div style={CSS.actions}>
-                <button style={CSS.actionBtn} disabled={busy} onClick={submitPrompt}>
-                  {editingPromptId !== undefined ? t('save') : t('addPrompt')}
-                </button>
-                {editingPromptId !== undefined && (
-                  <button style={CSS.actionBtn} onClick={() => { setEditingPromptId(undefined); setPromptName(''); setPromptDesc(''); setPromptContent('') }}>{t('cancel')}</button>
-                )}
+      {/* Fixed-height content area — every tab renders the same height. */}
+      <div style={CSS.content}>
+        {/* ── Tab: prompts ─────────────────────────────────────── */}
+        {activeTab === 'prompts' && (
+          <div style={CSS.columns}>
+            <div style={CSS.column}>
+              <div style={CSS.form}>
+                <input style={CSS.input} placeholder={t('promptNamePlaceholder')} value={promptName} onChange={(e) => setPromptName(e.target.value)} />
+                <input style={CSS.input} placeholder={t('promptDescPlaceholder')} value={promptDesc} onChange={(e) => setPromptDesc(e.target.value)} />
+                <textarea style={CSS.textarea} placeholder={t('promptContentPlaceholder')} value={promptContent} onChange={(e) => setPromptContent(e.target.value)} />
+                <div style={CSS.actions}>
+                  <button style={CSS.actionBtn} disabled={busy} onClick={submitPrompt}>
+                    {editingPromptId !== undefined ? t('save') : t('addPrompt')}
+                  </button>
+                  {editingPromptId !== undefined && (
+                    <button style={CSS.actionBtn} onClick={() => { setEditingPromptId(undefined); setPromptName(''); setPromptDesc(''); setPromptContent('') }}>{t('cancel')}</button>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div style={CSS.column}>
+              <input style={CSS.searchInput} placeholder={t('searchPlaceholder')} value={promptQuery} onChange={(e) => setPromptQuery(e.target.value)} />
+              <div style={CSS.scrollBox}>
+                {filteredPrompts.length === 0
+                  ? <div style={CSS.empty}>{t('empty')}</div>
+                  : filteredPrompts.map((row) => (
+                    <div key={row.id} style={CSS.card}>
+                      <div style={CSS.cardTop}>
+                        <div style={CSS.name}>{row.isDefault ? '★ ' : ''}{row.name}</div>
+                        <span style={{ ...CSS.badge, ...row.state === 'enabled' ? CSS.badgeEnabled : CSS.badgeDisabled }}>
+                          {row.state === 'enabled' ? t('enabled') : t('disabled')}
+                        </span>
+                      </div>
+                      <div style={CSS.desc}>{row.desc || row.content?.slice(0, 80)}</div>
+                      <div style={CSS.actions}>
+                        {!row.isDefault && <button style={CSS.actionBtn} onClick={() => markDefault(row.promptId!)}>{t('setDefault')}</button>}
+                        <button style={CSS.actionBtn} onClick={() => togglePrompt(row.promptId!, !row.promptEnabled)}>
+                          {row.state === 'enabled' ? t('disable') : t('enable')}
+                        </button>
+                        <button style={CSS.actionBtn} onClick={() => startEditPrompt(row)}>{t('edit')}</button>
+                        <button style={{ ...CSS.actionBtn, ...CSS.dangerBtn }} onClick={() => removePrompt(row.promptId!)}>{t('delete')}</button>
+                      </div>
+                    </div>
+                  ))}
               </div>
             </div>
           </div>
-          <div style={CSS.column}>
-            <input style={CSS.searchInput} placeholder={t('searchPlaceholder')} value={promptQuery} onChange={(e) => setPromptQuery(e.target.value)} />
-            <div style={CSS.scrollBox}>
-              {filteredPrompts.length === 0
-                ? <div style={CSS.empty}>{t('empty')}</div>
-                : filteredPrompts.map((row) => (
-                  <div key={row.id} style={CSS.card}>
-                    <div style={CSS.cardTop}>
-                      <div style={CSS.name}>{row.isDefault ? '★ ' : ''}{row.name}</div>
-                      <span style={{ ...CSS.badge, ...row.state === 'enabled' ? CSS.badgeEnabled : CSS.badgeDisabled }}>
-                        {row.state === 'enabled' ? t('enabled') : t('disabled')}
-                      </span>
-                    </div>
-                    <div style={CSS.desc}>{row.desc || row.content?.slice(0, 80)}</div>
-                    <div style={CSS.actions}>
-                      {!row.isDefault && <button style={CSS.actionBtn} onClick={() => markDefault(row.promptId!)}>{t('setDefault')}</button>}
-                      <button style={CSS.actionBtn} onClick={() => togglePrompt(row.promptId!, !row.promptEnabled)}>
-                        {row.state === 'enabled' ? t('disable') : t('enable')}
-                      </button>
-                      <button style={CSS.actionBtn} onClick={() => startEditPrompt(row)}>{t('edit')}</button>
-                      <button style={{ ...CSS.actionBtn, ...CSS.dangerBtn }} onClick={() => removePrompt(row.promptId!)}>{t('delete')}</button>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Tab: skills (merged managed + scanned) ───────────── */}
-      {activeTab === 'skills' && (
-        <div style={CSS.columns}>
-          <div style={CSS.column}>
-            <div style={CSS.form}>
-              <label style={CSS.fileBtn}>
-                {pickedFile !== '' ? `📄 ${pickedFile}` : t('pickSkillFile')}
-                <input type="file" accept=".md,.markdown,text/markdown,text/plain" style={{ display: 'none' }} onChange={(e) => onSkillFile(e.target.files?.[0])} />
-              </label>
-              <input style={CSS.input} placeholder={t('skillNamePlaceholder')} value={skillName} onChange={(e) => setSkillName(e.target.value)} />
-              <input style={CSS.input} placeholder={t('skillDescPlaceholder')} value={skillDesc} onChange={(e) => setSkillDesc(e.target.value)} />
-              <textarea style={CSS.textarea} placeholder={t('skillContentPlaceholder')} value={skillContent} onChange={(e) => setSkillContent(e.target.value)} />
-              <div style={CSS.actions}>
-                <button style={CSS.actionBtn} disabled={busy} onClick={submitSkill}>
-                  {editingSkillName !== undefined ? t('save') : t('addSkill')}
-                </button>
-                {editingSkillName !== undefined && (
-                  <button style={CSS.actionBtn} onClick={() => { setEditingSkillName(undefined); setSkillName(''); setSkillDesc(''); setSkillContent('') }}>{t('cancel')}</button>
-                )}
+        {/* ── Tab: skills (merged managed + scanned) ───────────── */}
+        {activeTab === 'skills' && (
+          <div style={CSS.columns}>
+            <div style={CSS.column}>
+              <div style={CSS.form}>
+                <label style={CSS.fileBtn}>
+                  {pickedFile !== '' ? `📄 ${pickedFile}` : t('pickSkillFile')}
+                  <input type="file" accept=".md,.markdown,text/markdown,text/plain" style={{ display: 'none' }} onChange={(e) => onSkillFile(e.target.files?.[0])} />
+                </label>
+                <input style={CSS.input} placeholder={t('skillNamePlaceholder')} value={skillName} onChange={(e) => setSkillName(e.target.value)} />
+                <input style={CSS.input} placeholder={t('skillDescPlaceholder')} value={skillDesc} onChange={(e) => setSkillDesc(e.target.value)} />
+                <textarea style={CSS.textarea} placeholder={t('skillContentPlaceholder')} value={skillContent} onChange={(e) => setSkillContent(e.target.value)} />
+                <div style={CSS.actions}>
+                  <button style={CSS.actionBtn} disabled={busy} onClick={submitSkill}>
+                    {editingSkillName !== undefined ? t('save') : t('addSkill')}
+                  </button>
+                  {editingSkillName !== undefined && (
+                    <button style={CSS.actionBtn} onClick={() => { setEditingSkillName(undefined); setSkillName(''); setSkillDesc(''); setSkillContent('') }}>{t('cancel')}</button>
+                  )}
+                </div>
+              </div>
+              {/* CLI entry */}
+              <div style={CSS.cliBox}>
+                <div style={{ marginBottom: '4px' }}>{t('cliHint')}</div>
+                <code style={{ fontSize: '11px', color: ACCENT, fontFamily: MONO }}>/armory-skill-dir &lt;目录&gt;</code><br />
+                <code style={{ fontSize: '11px', color: ACCENT, fontFamily: MONO }}>/armory-install-zip &lt;zip路径&gt;</code>
               </div>
             </div>
-            {/* CLI entry */}
-            <div style={CSS.cliBox}>
-              <div style={{ marginBottom: '4px' }}>{t('cliHint')}</div>
-              <code style={{ fontSize: '11px', color: ACCENT, fontFamily: MONO }}>/armory-skill-dir &lt;目录&gt;</code><br />
-              <code style={{ fontSize: '11px', color: ACCENT, fontFamily: MONO }}>/armory-install-zip &lt;zip路径&gt;</code>
+            <div style={CSS.column}>
+              <input style={CSS.searchInput} placeholder={t('searchPlaceholder')} value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} />
+              <div style={CSS.scrollBox}>
+                {filteredSkills.length === 0
+                  ? <div style={CSS.empty}>{t('empty')}</div>
+                  : filteredSkills.map((row) => (
+                    <div key={row.key} style={CSS.card}>
+                      <div style={CSS.cardTop}>
+                        <div style={CSS.name}>{row.name}</div>
+                        <span style={{ ...CSS.badge, ...badge(row.state) }}>{label(row.state)}</span>
+                      </div>
+                      <div style={CSS.desc}>{row.desc}</div>
+                      <div style={CSS.invokeHint}>/ {row.name}</div>
+                      <div style={CSS.actions}>
+                        {row.source === 'scanned' ? (
+                          <button style={CSS.actionBtn} onClick={() => adoptSkill(row.name)}>{t('manage')}</button>
+                        ) : (
+                          <>
+                            <button style={CSS.actionBtn} onClick={() => toggleSkill(row.installedName!, !row.skillEnabled)}>
+                              {row.state === 'enabled' ? t('disable') : t('enable')}
+                            </button>
+                            <button style={CSS.actionBtn} onClick={() => startEditSkill(row)}>{t('edit')}</button>
+                            <button style={{ ...CSS.actionBtn, ...CSS.dangerBtn }} onClick={() => removeSkill(row.installedName!)}>{t('uninstall')}</button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
             </div>
           </div>
-          <div style={CSS.column}>
-            <input style={CSS.searchInput} placeholder={t('searchPlaceholder')} value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} />
-            <div style={CSS.scrollBox}>
-              {filteredSkills.length === 0
-                ? <div style={CSS.empty}>{t('empty')}</div>
-                : filteredSkills.map((row) => (
-                  <div key={row.key} style={CSS.card}>
-                    <div style={CSS.cardTop}>
-                      <div style={CSS.name}>{row.name}</div>
-                      <span style={{ ...CSS.badge, ...badge(row.state) }}>{label(row.state)}</span>
-                    </div>
-                    <div style={CSS.desc}>{row.desc}</div>
-                    <div style={CSS.invokeHint}>/ {row.name}</div>
-                    <div style={CSS.actions}>
-                      {row.source === 'scanned' ? (
-                        <button style={CSS.actionBtn} onClick={() => adoptSkill(row.name)}>{t('manage')}</button>
-                      ) : (
-                        <>
-                          <button style={CSS.actionBtn} onClick={() => toggleSkill(row.installedName!, !row.skillEnabled)}>
-                            {row.state === 'enabled' ? t('disable') : t('enable')}
-                          </button>
-                          <button style={CSS.actionBtn} onClick={() => startEditSkill(row)}>{t('edit')}</button>
-                          <button style={{ ...CSS.actionBtn, ...CSS.dangerBtn }} onClick={() => removeSkill(row.installedName!)}>{t('uninstall')}</button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Tab: presets ──────────────────────────────────────── */}
-      {activeTab === 'presets' && (
-        <div style={CSS.columns}>
-          <div style={CSS.column}>
-            <div style={CSS.colHeader}>{t('agentPresetsTitle')} ({presetRows.length})</div>
-            <input style={CSS.searchInput} placeholder={t('searchPlaceholder')} value={presetQuery} onChange={(e) => setPresetQuery(e.target.value)} />
-            <div style={CSS.scrollBox}>
-              {filteredPresets.length === 0
-                ? <div style={CSS.empty}>{t('empty')}</div>
-                : filteredPresets.map((row) => (
-                  <div key={row.id} style={CSS.card}>
-                    <div style={CSS.cardTop}>
-                      <div style={CSS.name}>{row.isDefault ? '★ ' : ''}{row.name}</div>
-                      <span style={{ ...CSS.badge, ...badge(row.state) }}>{label(row.state)}</span>
+        {/* ── Tab: presets ──────────────────────────────────────── */}
+        {activeTab === 'presets' && (
+          <div style={CSS.columns}>
+            <div style={{ ...CSS.column, gridColumn: '1 / -1' }}>
+              <div style={CSS.colHeader}>{t('agentPresetsTitle')} ({presetRows.length})</div>
+              <input style={CSS.searchInput} placeholder={t('searchPlaceholder')} value={presetQuery} onChange={(e) => setPresetQuery(e.target.value)} />
+              <div style={CSS.scrollBox}>
+                {filteredPresets.length === 0
+                  ? <div style={CSS.empty}>{t('empty')}</div>
+                  : filteredPresets.map((row) => (
+                    <div key={row.id} style={CSS.card}>
+                      <div style={CSS.cardTop}>
+                        <div style={CSS.name}>{row.isDefault ? '★ ' : ''}{row.name}</div>
+                        <span style={{ ...CSS.badge, ...badge(row.state) }}>{label(row.state)}</span>
+                      </div>
+                      <div style={CSS.desc}>{row.desc}</div>
+                      {!row.isDefault && <button style={CSS.actionBtn} onClick={() => setDefault(row.presetId!)}>{t('setDefault')}</button>}
                     </div>
-                    <div style={CSS.desc}>{row.desc}</div>
-                    {!row.isDefault && <button style={CSS.actionBtn} onClick={() => setDefault(row.presetId!)}>{t('setDefault')}</button>}
-                  </div>
-                ))}
+                  ))}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

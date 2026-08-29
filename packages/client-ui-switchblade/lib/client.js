@@ -115,6 +115,11 @@ window.__ModuleLoader__.load({
 		const AMBER = "#d29922";
 		const GRAY = "#30363d";
 		const CSS = {
+			content: {
+				minHeight: "420px",
+				display: "flex",
+				flexDirection: "column"
+			},
 			root: {
 				fontFamily: "-apple-system,'Segoe UI','Inter',Roboto,'Helvetica Neue',sans-serif",
 				background: "#0d1117",
@@ -171,8 +176,9 @@ window.__ModuleLoader__.load({
 			columns: {
 				display: "grid",
 				gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-				gap: "12px",
-				alignItems: "start"
+				gap: "16px",
+				alignItems: "start",
+				flex: 1
 			},
 			column: {
 				display: "flex",
@@ -295,12 +301,13 @@ window.__ModuleLoader__.load({
 				letterSpacing: "1px"
 			},
 			scrollBox: {
-				maxHeight: "520px",
+				flex: 1,
 				overflowY: "auto",
 				display: "flex",
 				flexDirection: "column",
-				gap: "8px",
-				paddingRight: "4px"
+				gap: "10px",
+				paddingRight: "6px",
+				minHeight: "0"
 			},
 			searchInput: {
 				background: "#0d1117",
@@ -614,7 +621,10 @@ window.__ModuleLoader__.load({
 							})
 						]
 					}),
-					activeTab === "prompts" && (0, react_jsx_runtime.jsxs)("div", {
+					(0, react_jsx_runtime.jsxs)("div", {
+						style: CSS.content,
+						children: [
+							activeTab === "prompts" && (0, react_jsx_runtime.jsxs)("div", {
 						style: CSS.columns,
 						children: [(0, react_jsx_runtime.jsx)("div", {
 							style: CSS.column,
@@ -872,7 +882,10 @@ window.__ModuleLoader__.load({
 					activeTab === "presets" && (0, react_jsx_runtime.jsx)("div", {
 						style: CSS.columns,
 						children: (0, react_jsx_runtime.jsxs)("div", {
-							style: CSS.column,
+							style: {
+								...CSS.column,
+								gridColumn: "1 / -1"
+							},
 							children: [
 								(0, react_jsx_runtime.jsxs)("div", {
 									style: CSS.colHeader,
@@ -925,8 +938,10 @@ window.__ModuleLoader__.load({
 							]
 						})
 					})
-				]
-			});
+					]
+				})
+			]
+		});
 		}
 		//#endregion
 		//#region lib/types/client/store.js
