@@ -173,7 +173,7 @@ window.__ModuleLoader__.load({
 				borderBottomColor: ACCENT
 			},
 			content: {
-				height: "480px",
+				height: "600px",
 				display: "flex",
 				flexDirection: "column",
 				gap: "12px"
@@ -206,7 +206,7 @@ window.__ModuleLoader__.load({
 				fontSize: "13px",
 				padding: "8px 10px",
 				borderRadius: "6px",
-				minHeight: "60px",
+				minHeight: "48px",
 				resize: "vertical",
 				outline: "none",
 				transition: "border-color .15s ease"
@@ -796,29 +796,17 @@ window.__ModuleLoader__.load({
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									style: CSS.cliBox,
-									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-											style: { marginBottom: "4px" },
-											children: t("cliHint")
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", {
-											style: {
-												fontSize: "11px",
-												color: ACCENT,
-												fontFamily: MONO
-											},
-											children: "/armory-skill-dir <目录>"
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("br", {}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", {
-											style: {
-												fontSize: "11px",
-												color: ACCENT,
-												fontFamily: MONO
-											},
-											children: "/armory-install-zip <zip路径>"
-										})
-									]
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										style: { marginBottom: "4px" },
+										children: t("cliHint")
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", {
+										style: {
+											fontSize: "11px",
+											color: ACCENT,
+											fontFamily: MONO
+										},
+										children: "/armory-skill-dir <目录> · /armory-install-zip <zip路径>"
+									})]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 									style: CSS.searchInput,

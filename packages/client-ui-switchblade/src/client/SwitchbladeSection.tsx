@@ -103,7 +103,7 @@ const CSS: Record<string, CSSProperties> = {
   },
   /* Fixed-height content area so every tab renders the same height. */
   content: {
-    height: '480px',
+    height: '600px',
     display: 'flex',
     flexDirection: 'column' as const,
     gap: '12px',
@@ -136,7 +136,7 @@ const CSS: Record<string, CSSProperties> = {
     fontSize: '13px',
     padding: '8px 10px',
     borderRadius: '6px',
-    minHeight: '60px',
+    minHeight: '48px',
     resize: 'vertical' as const,
     outline: 'none',
     transition: 'border-color .15s ease',
@@ -555,8 +555,7 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
             </div>
             <div style={CSS.cliBox}>
               <div style={{ marginBottom: '4px' }}>{t('cliHint')}</div>
-              <code style={{ fontSize: '11px', color: ACCENT, fontFamily: MONO }}>/armory-skill-dir &lt;目录&gt;</code><br />
-              <code style={{ fontSize: '11px', color: ACCENT, fontFamily: MONO }}>/armory-install-zip &lt;zip路径&gt;</code>
+              <code style={{ fontSize: '11px', color: ACCENT, fontFamily: MONO }}>/armory-skill-dir &lt;目录&gt; · /armory-install-zip &lt;zip路径&gt;</code>
             </div>
             <input style={CSS.searchInput} placeholder={t('searchPlaceholder')} value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} />
             <div style={CSS.scrollBox}>
