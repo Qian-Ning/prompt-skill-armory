@@ -5,6 +5,8 @@
 
 [**中文**](./README.md) · **English**
 
+![Prompt•Skill-Armory 0.7.0](docs/demo.svg "Prompt•Skill-Armory management panel")
+
 ![version](https://img.shields.io/badge/version-0.7.0-00ff9c)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![platform](https://img.shields.io/badge/platform-web%20%2B%20desktop-00ff9c)
