@@ -1,7 +1,7 @@
 # Prompt•Skill-Armory
 
 > **DeepSeek Harness 的提示词与技能管理器（CCswitch 风格）**
-> 管理全局生效的提示词、从 `.md`/目录/zip 安装技能、浏览 Agent 预设——一个面板，带启用/停用开关。
+> 管理全局提示词、安装技能、浏览 Agent 预设、连接 MCP 工具服务器、自定义全局壁纸与特效——一个面板，带启用/停用开关。
 
 **中文** · [**English**](./README.en.md)
 
@@ -16,11 +16,11 @@
 ![CI](https://github.com/Qian-Ning/prompt-skill-armory/actions/workflows/ci.yml/badge.svg)
 
 ```
-✦ Prompt•Skill-Armory [v0.7.0]
-┌────────────┬──────────────────┬──────────────┐
-│ 提示词      │ 技能              │ Agent预设     │
-│ (全局生效)  │ (合并管理)        │ (roster)     │
-└────────────┴──────────────────┴──────────────┘
+✦ Prompt•Skill-Armory  v0.7.0
+┌─────────┬─────────┬─────┬────────────┬─────────┐
+│ 提示词    │  技能    │ MCP │  Wallpaper │ 预设     │
+│ 全局注入  │ 合并管理  │ 连接 │  壁纸·特效  │ roster  │
+└─────────┴─────────┴─────┴────────────┴─────────┘
 ```
 
 ---
@@ -84,6 +84,9 @@ pnpm dsh web
   - `.md` 文件选择
   - 会话内命令：`/armory-skill-dir <dir>`、`/armory-install-zip <zip>`
 - **Agent 预设** — 浏览名册、设默认。
+- **MCP 工具服务器** — 添加/编辑/移除 stdio 或 HTTP 的 MCP 服务器，启用即自动连接，每台展示运行状态与工具列表，支持「测试」连接。
+- **Wallpaper（全局壁纸与特效）** — 本地上传图片/视频（字节存盘，settings 只存 id 不膨胀）或填图片 URL；透明度/遮罩/玻璃/模糊/铺法实时可调；**web 与桌面客户端分别设置**。
+- **输入栏提示行样式** — 为 composer 下方提示与统计行单独设启用/颜色/字号/渐变色。
 - **中英双语 UI**（简体中文 / English）。
 - **设置侧边栏书图标**。
 
@@ -138,8 +141,8 @@ pnpm dsh web
 | 包 | 作用 |
 |---|---|
 | `prompt-skill-armory` | npm 安装器（CLI） |
-| `@deepseek-ai/dsh-switchblade` | Host 服务（提示词/技能/命令） |
-| `@deepseek-ai/dsh-client-ui-switchblade` | Web 面板 |
+| `@deepseek-ai/dsh-switchblade` | Host 服务（提示词/技能/命令/MCP/壁纸持久化 + 上传路由） |
+| `@deepseek-ai/dsh-client-ui-switchblade` | Web 面板（五 tab：提示词/技能/MCP/Wallpaper/预设） |
 
 ## 🗂️ 仓库结构
 

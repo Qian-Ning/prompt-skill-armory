@@ -1,7 +1,7 @@
 # Prompt•Skill-Armory
 
 > **A CCswitch-style prompt + skill manager for the DeepSeek Harness**
-> Manage globally injected prompts, install skills from `.md`/directory/zip, and browse agent presets — one panel with enable/disable switches.
+> Manage globally injected prompts, install skills, browse agent presets, connect MCP tool servers, and customize a global wallpaper with effects — one panel with enable/disable switches.
 
 [**中文**](./README.md) · **English**
 
@@ -16,11 +16,11 @@
 ![CI](https://github.com/Qian-Ning/prompt-skill-armory/actions/workflows/ci.yml/badge.svg)
 
 ```
-✦ Prompt•Skill-Armory [v0.7.0]
-┌────────────┬──────────────────┬──────────────┐
-│ 提示词      │ 技能              │ Agent预设     │
-│ (全局生效)  │ (合并管理)        │ (roster)     │
-└────────────┴──────────────────┴──────────────┘
+✦ Prompt•Skill-Armory  v0.7.0
+┌─────────┬─────────┬─────┬────────────┬─────────┐
+│ Prompts │ Skills  │ MCP │  Wallpaper │ Presets │
+│ global  │ merged  │ hub │ wallpaper  │ roster  │
+└─────────┴─────────┴─────┴────────────┴─────────┘
 ```
 
 ---
@@ -54,7 +54,7 @@ The installer automatically:
 
 1. Locates DSH home
 2. Ensures `web` + `desktop` profiles exist
-3. Installs both plugin packages (Host + Web panel)
+3. Installs both plugin packages (Host + Web panel (five tabs: prompts/skills/MCP/wallpaper/presets)
 4. Configures the Host bundle
 5. Mounts the panel (profile `cordis.patch.yml`)
 6. Health-checks settings (prevents 4MB bloat)
@@ -84,6 +84,9 @@ Open **Settings → Prompt•Skill-Armory** (book icon).
   - `.md` file picker
   - CLI in a session: `/armory-skill-dir <dir>`, `/armory-install-zip <zip>`
 - **Agent presets** — browse the roster, set default.
+- **MCP tool servers** — add/edit/remove stdio or HTTP MCP servers; enabling connects them automatically, with per-server status, tool list, and a connect test.
+- **Wallpaper (global background & effects)** — upload a local image/video (bytes on disk, id-only in settings) or paste an image URL; live-tune opacity / scrim / glass / blur / fit; **set separately on web vs desktop**.
+- **Composer hint-line style** — enable / color / size / gradient presets for the below-input hint and stats line.
 - **Bilingual UI** (Simplified Chinese / English).
 - **Book icon** in the settings sidebar.
 
@@ -139,7 +142,7 @@ The skill body is injected; the agent follows it. Model-invocable skills are als
 | Package | Role |
 |---|---|
 | `prompt-skill-armory` | npm installer (CLI) |
-| `@deepseek-ai/dsh-switchblade` | Host service (prompts/skills/commands) |
+| `@deepseek-ai/dsh-switchblade` | Host service (prompts/skills/commands/MCP/wallpaper persistence + upload routes) |
 | `@deepseek-ai/dsh-client-ui-switchblade` | Web panel |
 
 ## 🗂️ Repository layout
