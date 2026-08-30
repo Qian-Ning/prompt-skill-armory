@@ -16,7 +16,7 @@ window.__ModuleLoader__.load({
 		const NS = "settings.switchblade";
 		/** zh-CN copy. */
 		const zh = {
-			nav: "Prompt•Skill-Armory",
+			nav: "Armory",
 			skillsTitle: "技能",
 			presetsTitle: "提示词预设",
 			promptsTitle: "提示词",
@@ -58,7 +58,7 @@ window.__ModuleLoader__.load({
 		};
 		/** en-US copy. */
 		const en = {
-			nav: "Prompt•Skill-Armory",
+			nav: "Armory",
 			skillsTitle: "Skills",
 			presetsTitle: "Prompt Presets",
 			promptsTitle: "Prompts",
@@ -1134,9 +1134,8 @@ window.__ModuleLoader__.load({
 								" ",
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									style: CSS.titleAccent,
-									children: "Prompt•Skill"
+									children: "Armory"
 								}),
-								"-Armory",
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									style: CSS.versionBadge,
 									children: ["v", ARMORY_VERSION]

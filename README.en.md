@@ -1,7 +1,8 @@
-# Prompt•Skill-Armory
+# Armory
 
-> **A CCswitch-style prompt + skill manager for the DeepSeek Harness**
-> Manage globally injected prompts, install skills, browse agent presets, connect MCP tool servers, and customize a global wallpaper with effects — one panel with enable/disable switches.
+> **A community plugin / control center for DeepSeek Harness** — prompts, skills, MCP tool servers, agent presets, and a global wallpaper with effects, all in one management panel.
+
+**Package / repo**: `prompt-skill-armory` · [GitHub](https://github.com/Qian-Ning/prompt-skill-armory)
 
 [**中文**](./README.md) · **English**
 
@@ -16,7 +17,7 @@
 ![CI](https://github.com/Qian-Ning/prompt-skill-armory/actions/workflows/ci.yml/badge.svg)
 
 ```
-✦ Prompt•Skill-Armory  v0.7.1
+✦ Armory  v0.7.1
 ┌─────────┬─────────┬─────┬────────────┬─────────┐
 │ Prompts │ Skills  │ MCP │  Wallpaper │ Presets │
 │ global  │ merged  │ hub │ wallpaper  │ roster  │

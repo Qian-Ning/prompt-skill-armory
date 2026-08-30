@@ -1,7 +1,8 @@
-# Prompt•Skill-Armory
+# Armory
 
-> **DeepSeek Harness 的提示词与技能管理器（CCswitch 风格）**
-> 管理全局提示词、安装技能、浏览 Agent 预设、连接 MCP 工具服务器、自定义全局壁纸与特效——一个面板，带启用/停用开关。
+> **面向 DeepSeek Harness 的社区插件 / 管理中枢** — 提示词、技能、MCP 工具服务器、Agent 预设、全局壁纸与特效，一站式管理面板。
+
+**包名 / 仓库**：`prompt-skill-armory` · [GitHub](https://github.com/Qian-Ning/prompt-skill-armory)
 
 **中文** · [**English**](./README.en.md)
 
@@ -16,7 +17,7 @@
 ![CI](https://github.com/Qian-Ning/prompt-skill-armory/actions/workflows/ci.yml/badge.svg)
 
 ```
-✦ Prompt•Skill-Armory  v0.7.1
+✦ Armory  v0.7.1
 ┌─────────┬─────────┬─────┬────────────┬─────────┐
 │ 提示词    │  技能    │ MCP │  Wallpaper │ 预设     │
 │ 全局注入  │ 合并管理  │ 连接 │  壁纸·特效  │ roster  │

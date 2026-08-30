@@ -21,7 +21,7 @@ export type SwitchbladeKey =
 
 /** zh-CN copy. */
 export const zh: Record<SwitchbladeKey, string> = {
-  nav: 'Prompt•Skill-Armory',
+  nav: 'Armory',
   skillsTitle: '技能',
   presetsTitle: '提示词预设',
   promptsTitle: '提示词',
@@ -64,7 +64,7 @@ export const zh: Record<SwitchbladeKey, string> = {
 
 /** en-US copy. */
 export const en: Record<SwitchbladeKey, string> = {
-  nav: 'Prompt•Skill-Armory',
+  nav: 'Armory',
   skillsTitle: 'Skills',
   presetsTitle: 'Prompt Presets',
   promptsTitle: 'Prompts',

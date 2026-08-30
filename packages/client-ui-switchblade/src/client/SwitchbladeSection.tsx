@@ -597,7 +597,7 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     <div style={CSS.root}>
       <div style={CSS.head}>
         <div style={CSS.title}>
-          <BookIcon size={16} /> <span style={CSS.titleAccent}>Prompt•Skill</span>-Armory
+          <BookIcon size={16} /> <span style={CSS.titleAccent}>Armory</span>
           <span style={CSS.versionBadge}>v{ARMORY_VERSION}</span>
         </div>
         <button style={CSS.refreshBtn} onClick={refresh}>{t('refresh')}</button>
