@@ -310,7 +310,8 @@ export function applyHintStyle(): void {
     const tag = document.getElementById('switchblade-hint') as HTMLStyleElement
     const color = hint.color || (isDesktopSurface ? '#7ee787' : '#79c0ff')
     const size = hint.size || 11
-    const grad = hint.gradient ?? ''
+    const gradPreset = GRADIENTS.find((g) => g.id === (hint.gradient ?? ''))
+    const grad = gradPreset !== undefined ? gradPreset.css : ''
     let hintCss = `[data-decoration="hint"]{font-size:${size}px;letter-spacing:0.3px;font-weight:600;opacity:0.95;`
     const statsStyle = (root: HTMLElement): void => {
       if (grad !== '') {

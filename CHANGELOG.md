@@ -6,6 +6,12 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.7.1] - 2026-08
+
+### 修复 · Fixed
+- 渐变色方案：正确解析渐变 id → CSS（修复除「纯色」外渐变文字未生效）。
+  Gradient presets now resolve the preset id to its CSS (fixes gradient text not applying).
+
 ## [0.7.0] - 2026-08
 
 ### 新增 · Added

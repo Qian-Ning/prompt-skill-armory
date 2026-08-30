@@ -473,7 +473,8 @@ window.__ModuleLoader__.load({
 				const tag = document.getElementById("switchblade-hint");
 				const color = hint.color || (isDesktopSurface ? "#7ee787" : "#79c0ff");
 				const size = hint.size || 11;
-				const grad = hint.gradient ?? "";
+				const gradPreset = GRADIENTS.find((g) => g.id === (hint.gradient ?? ""));
+				const grad = gradPreset !== void 0 ? gradPreset.css : "";
 				let hintCss = `[data-decoration="hint"]{font-size:${size}px;letter-spacing:0.3px;font-weight:600;opacity:0.95;`;
 				const statsStyle = (root) => {
 					if (grad !== "") {
@@ -836,7 +837,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.7.0";
+		const ARMORY_VERSION = "0.7.1";
 		/** Render the Prompt-SkillArmory management page. */
 		function SwitchbladeSection(props) {
 			const { useSwitchblade, t, load, setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt, installSkill, updateSkill, setSkillEnabled, uninstallSkill, addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer, testMcpServer } = props;
