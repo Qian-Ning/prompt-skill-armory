@@ -6,6 +6,12 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.7.2] - 2026-08
+
+### 变更 · Changed
+- 插件展示名更名 **Armory**（面板标题、设置导航、README 定位为 DeepSeek Harness 社区插件/管理中枢，覆盖提示词/技能/MCP/壁纸/预设）；npm 与仓库名保持 `prompt-skill-armory`。
+  Renamed the display name to **Armory** (panel title, nav, README) and positioned it as a DeepSeek Harness community plugin / control center (prompts, skills, MCP, wallpaper, presets); npm & repo stay `prompt-skill-armory`.
+
 ## [0.7.1] - 2026-08
 
 ### 修复 · Fixed
