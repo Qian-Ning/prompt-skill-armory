@@ -6,7 +6,17 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
-## [Unreleased] · 未发布
+## [0.7.0] - 2026-08
+
+### 新增 · Added
+- 可配置全局壁纸：本地上传图片/视频（字节存盘 `~/.dsh/wallpapers`，settings 只存 id，不撑爆配置文档）或图片 URL；透明度 / 遮罩 / 玻璃透明度 / 玻璃模糊 / 壁纸模糊 / 铺法可调。
+  Configurable global wallpaper: local image/video upload (bytes on disk, id-only in settings) or an image URL; adjustable opacity / scrim / glass / blur / fit.
+- 桌面客户端与网页端分别设置壁纸与样式（`backgroundDesktop` / `backgroundWeb` 分字段）。
+  Per-surface wallpaper & styling for desktop vs web.
+- 输入栏下方提示行（含 dock 统计行）样式：启用 / 颜色 / 字号 / 渐变色预设（极光/火焰/晴空/霓虹/海洋/晚霞）。
+  Composer hint-line (incl. dock stats row) styling: enable / color / size / gradient presets.
+- Wallpaper tab 移至第四列并更名 Wallpaper；启用改为醒目滑动开关。
+  Wallpaper tab moved to 4th column and renamed Wallpaper; a prominent enable switch.
 
 ## [0.5.6] - 2026-08
 

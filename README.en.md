@@ -5,13 +5,13 @@
 
 [**中文**](./README.md) · **English**
 
-![version](https://img.shields.io/badge/version-0.5.6-00ff9c)
+![version](https://img.shields.io/badge/version-0.7.0-00ff9c)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![platform](https://img.shields.io/badge/platform-web%20%2B%20desktop-00ff9c)
 ![CI](https://github.com/Qian-Ning/prompt-skill-armory/actions/workflows/ci.yml/badge.svg)
 
 ```
-✦ Prompt•Skill-Armory [v0.5.6]
+✦ Prompt•Skill-Armory [v0.7.0]
 ┌────────────┬──────────────────┬──────────────┐
 │ 提示词      │ 技能              │ Agent预设     │
 │ (全局生效)  │ (合并管理)        │ (roster)     │
