@@ -5,7 +5,10 @@
 
 [**中文**](./README.md) · **English**
 
-![Prompt•Skill-Armory 0.7.0](docs/demo.svg "Prompt•Skill-Armory management panel")
+![Prompt•Skill-Armory management panel](docs/preview/preview-1.png)
+
+| <img src="docs/preview/preview-2.png" width="220"/> | <img src="docs/preview/preview-3.png" width="220"/> | <img src="docs/preview/preview-4.png" width="220"/> | <img src="docs/preview/preview-5.png" width="220"/> |
+|--|--|--|--|
 
 ![version](https://img.shields.io/badge/version-0.7.0-00ff9c)
 ![license](https://img.shields.io/badge/license-MIT-blue)
