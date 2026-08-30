@@ -1,6 +1,8 @@
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, extname, join } from "node:path";
 import { Service } from "@deepseek-ai/cordis";
+import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
@@ -437,12 +439,102 @@ function dequote(raw) {
 const execFileAsync = promisify(execFile);
 /** Switchblade settings namespace name. */
 const SETTINGS_NAMESPACE = "switchblade";
+/** Same-origin background API prefix the browser half fetches on startup. */
+const BACKGROUND_API_PREFIX = "/api/switchblade-wallpaper";
+/** Defaults merged over the stored user section when reading. */
+const DEFAULT_BACKGROUND = {
+	enabled: false,
+	kind: "image",
+	uploadId: "",
+	url: "",
+	opacity: 1,
+	scrim: .25,
+	panelOpacity: 1,
+	blur: 16,
+	wallpaperBlur: 0,
+	fit: "cover"
+};
+/** Plugin-owned media dir under the harness home (bytes live on disk, never in settings). */
+function wallpaperDir() {
+	const dir = join(homedir(), ".dsh", "wallpapers");
+	mkdir(dir, { recursive: true }).catch(() => {});
+	return dir;
+}
+const ACCEPTED_MEDIA = {
+	"image/jpeg": {
+		ext: "jpg",
+		kind: "image"
+	},
+	"image/png": {
+		ext: "png",
+		kind: "image"
+	},
+	"image/webp": {
+		ext: "webp",
+		kind: "image"
+	},
+	"image/gif": {
+		ext: "gif",
+		kind: "image"
+	},
+	"image/svg+xml": {
+		ext: "svg",
+		kind: "image"
+	},
+	"video/mp4": {
+		ext: "mp4",
+		kind: "video"
+	},
+	"video/webm": {
+		ext: "webm",
+		kind: "video"
+	}
+};
+/** JSON helper for route responses. */
+function jsonResponse(res, status, body) {
+	res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+	res.end(JSON.stringify(body));
+}
+/** Loopback host check for the same-origin fence (see the reference skin plugins). */
+const LOOPBACK_HOSTS = /* @__PURE__ */ new Set([
+	"127.0.0.1",
+	"localhost",
+	"[::1]",
+	"::1"
+]);
+function isLoopbackHost(host) {
+	let bare = host;
+	if (host.startsWith("[")) {
+		const end = host.indexOf("]");
+		if (end !== -1) bare = host.slice(0, end + 1);
+	} else {
+		const colon = host.indexOf(":");
+		if (colon !== -1) bare = host.slice(0, colon);
+	}
+	return LOOPBACK_HOSTS.has(bare) || LOOPBACK_HOSTS.has(host);
+}
+/** Reject cross-site browser requests against the local wallpaper endpoint. */
+function isSameOriginRequest(req) {
+	if (req.headers["sec-fetch-site"] === "cross-site") return false;
+	const host = req.headers.host;
+	if (typeof host !== "string" || !isLoopbackHost(host)) return false;
+	const origin = req.headers.origin;
+	if (typeof origin === "string" && origin !== "" && origin !== "null") try {
+		return new URL(origin).host === host;
+	} catch {
+		return false;
+	}
+	return true;
+}
 /** Runtime schema for the persisted slice. */
 const SwitchbladeSettingsSchema = z.object({
 	installedSkills: z.array(z.any()).default([]),
 	customCommands: z.array(z.any()).default([]),
 	prompts: z.array(z.any()).default([]),
-	mcpServers: z.array(z.any()).default([])
+	mcpServers: z.array(z.any()).default([]),
+	mcpStatus: z.dict(z.any()).default({}),
+	mcpTestRequest: z.any(),
+	background: z.any()
 });
 /** One prompt section id prefix registered on ctx.systemPrompt. */
 const PROMPT_SECTION_PREFIX = "switchblade:prompt:";
@@ -470,6 +562,10 @@ var Switchblade = class extends Service {
 	promptSections = /* @__PURE__ */ new Map();
 	/** Live mcp-client loader entry ids, keyed by serverName. */
 	mcpEntries = /* @__PURE__ */ new Map();
+	/** Last startup/connection error per serverName, surfaced in mcpStatus. */
+	mcpErrors = /* @__PURE__ */ new Map();
+	/** Last processed test-request timestamp per serverName (idempotency guard). */
+	lastTestTs = /* @__PURE__ */ new Map();
 	/** The settings namespace scope; present only while a settings provider is composed. */
 	settingsScope;
 	/** The settings service behind {@link settingsScope}, for path writes. */
@@ -478,7 +574,7 @@ var Switchblade = class extends Service {
 		super(ctx, "switchblade");
 		this.config = config;
 		ctx.logger.warn("[switchblade] Switchblade service constructed");
-		ctx.inject(["settings"], (settingsCtx) => {
+		ctx.inject(["settings", "webServer"], (settingsCtx) => {
 			const scope = settingsCtx.settings.register(settingsNamespace(SETTINGS_NAMESPACE), SwitchbladeSettingsSchema, { base: {} });
 			this.settingsScope = scope;
 			this.settingsService = settingsCtx.settings;
@@ -506,6 +602,16 @@ var Switchblade = class extends Service {
 					} catch (e) {
 						settingsCtx.logger.warn(`[switchblade] mcp reconcile: ${String(e)}`);
 					}
+					try {
+						this.handleMcpTestRequest();
+					} catch (e) {
+						settingsCtx.logger.warn(`[switchblade] mcp test reconcile: ${String(e)}`);
+					}
+					try {
+						this.publishMcpStatus();
+					} catch (e) {
+						settingsCtx.logger.warn(`[switchblade] mcp status reconcile: ${String(e)}`);
+					}
 					reconciling = false;
 				});
 			};
@@ -516,6 +622,17 @@ var Switchblade = class extends Service {
 			}, "switchblade.settings()");
 			settingsCtx.logger.warn(`[switchblade] settings registered; prompts=${scope.get().prompts.length} skills=${scope.get().installedSkills.length}`);
 			this.reinstall(scope.get());
+			try {
+				for (const route of this.wallpaperRoutes()) settingsCtx.effect(() => {
+					try {
+						settingsCtx.webServer.register(route);
+					} catch (e) {
+						settingsCtx.logger.warn(`[switchblade] route failed: ${String(e)}`);
+					}
+				}, "switchblade: bg route");
+			} catch (e) {
+				settingsCtx.logger.warn(`[switchblade] route setup failed: ${String(e)}`);
+			}
 		});
 	}
 	/** All persisted state, merged over schema defaults. */
@@ -523,7 +640,9 @@ var Switchblade = class extends Service {
 		return this.settingsScope?.get() ?? {
 			installedSkills: [],
 			customCommands: [],
-			prompts: []
+			prompts: [],
+			mcpServers: [],
+			mcpStatus: {}
 		};
 	}
 	/** All managed prompts, sorted (default first, then by order). */
@@ -999,6 +1118,135 @@ var Switchblade = class extends Service {
 		}
 		if (settings.prompts.length > 0) this.applyPromptRegistrations();
 		for (const server of settings.mcpServers) if (server.enabled) this.startMcpServer(server.serverName);
+		this.publishMcpStatus();
+	}
+	/** Persist the background section through the switchblade settings document. */
+	async writeBackground(section) {
+		await this.settingsService?.mutate(settingsNamespace(SETTINGS_NAMESPACE), [{
+			op: "set",
+			path: ["background"],
+			value: section
+		}]);
+	}
+	/** Read the resolved background section (defaults merged over the user layer). */
+	readBackground() {
+		const raw = this.settings().background;
+		return {
+			...DEFAULT_BACKGROUND,
+			...raw ?? {}
+		};
+	}
+	/**
+	* Same-origin media routes: POST /upload stores a local image/video on disk
+	* (bytes NEVER enter the settings document, so it stays well under the size
+	* cap and survives restarts) and GET /image/<id> serves it back. Mirrors the
+	* reference dsh-background / skin-center pattern.
+	*/
+	wallpaperRoutes() {
+		const readRawBody = (req, limit) => new Promise((resolve, reject) => {
+			const chunks = [];
+			let size = 0;
+			req.on("data", (c) => {
+				size += c.length;
+				if (size > limit) {
+					req.pause();
+					reject(/* @__PURE__ */ new Error("body-too-large"));
+					return;
+				}
+				chunks.push(c);
+			});
+			req.on("end", () => resolve(Buffer.concat(chunks)));
+			req.on("error", reject);
+		});
+		return [{
+			kind: "exact",
+			path: `${BACKGROUND_API_PREFIX}/upload`,
+			handler: async (req, res) => {
+				if (!isSameOriginRequest(req)) {
+					jsonResponse(res, 403, {
+						ok: false,
+						error: "rejected"
+					});
+					return;
+				}
+				if (req.method !== "POST") {
+					jsonResponse(res, 405, {
+						ok: false,
+						error: "method-not-allowed"
+					});
+					return;
+				}
+				const mime = (req.headers["content-type"] ?? "").split(";")[0]?.trim() ?? "";
+				const meta = ACCEPTED_MEDIA[mime];
+				if (meta === void 0) {
+					jsonResponse(res, 400, {
+						ok: false,
+						error: "unsupported-media-type"
+					});
+					return;
+				}
+				try {
+					const body = await readRawBody(req, 60 * 1024 * 1024);
+					if (body.length === 0) {
+						jsonResponse(res, 400, {
+							ok: false,
+							error: "empty-body"
+						});
+						return;
+					}
+					const id = "up-" + randomBytes(12).toString("hex");
+					await writeFile(join(wallpaperDir(), `${id}.${meta.ext}`), body);
+					jsonResponse(res, 200, {
+						ok: true,
+						id,
+						kind: meta.kind,
+						url: `${BACKGROUND_API_PREFIX}/image/${id}`
+					});
+				} catch (error) {
+					jsonResponse(res, 400, {
+						ok: false,
+						error: error instanceof Error ? error.message : String(error)
+					});
+				}
+			}
+		}, {
+			kind: "prefix",
+			path: `${BACKGROUND_API_PREFIX}/image`,
+			handler: async (req, res) => {
+				if (!isSameOriginRequest(req)) {
+					jsonResponse(res, 403, {
+						ok: false,
+						error: "rejected"
+					});
+					return;
+				}
+				if (req.method !== "GET") {
+					jsonResponse(res, 405, { ok: false });
+					return;
+				}
+				const id = (req.url ?? "").slice(`${BACKGROUND_API_PREFIX}/image`.length + 1).replace(/[^a-z0-9.-]/gi, "");
+				if (!/^up-[a-f0-9]{24}/.test(id)) {
+					jsonResponse(res, 404, { ok: false });
+					return;
+				}
+				const dir = join(homedir(), ".dsh", "wallpapers");
+				if (!existsSync(dir)) {
+					jsonResponse(res, 404, { ok: false });
+					return;
+				}
+				const found = Object.values(ACCEPTED_MEDIA).map((m) => join(dir, id.endsWith(m.ext) ? id : `${id}.${m.ext}`)).find((p) => existsSync(p));
+				if (found === void 0) {
+					jsonResponse(res, 404, { ok: false });
+					return;
+				}
+				const mime = extname(found).slice(1) === "mp4" ? "video/mp4" : extname(found).slice(1) === "webm" ? "video/webm" : `image/${extname(found).slice(1).replace("jpg", "jpeg")}`;
+				res.writeHead(200, {
+					"content-type": mime,
+					"cache-control": "public, max-age=31536000, immutable"
+				});
+				res.end(await readFile(found));
+			}
+		}];
 	}
 	/** Reconcile live mcp-client instances against the persisted config list. */
 	reconcileMcpServers() {
@@ -1013,18 +1261,64 @@ var Switchblade = class extends Service {
 	}
 	/** List all configured MCP servers with their runtime status. */
 	async listMcpServers() {
-		const tools = this.listMcpTools();
-		return this.settings().mcpServers.map((server) => {
-			const running = this.mcpEntries.has(server.serverName);
-			const toolCount = tools.filter((t) => t.name.startsWith(`mcp__${server.serverName}__`)).length;
-			return {
-				serverName: server.serverName,
-				transport: server.transport,
-				enabled: server.enabled,
-				running,
-				toolCount
-			};
-		});
+		return this.settings().mcpServers.map((server) => this.statusOf(server.serverName));
+	}
+	/** Compute the runtime status of one configured server. */
+	statusOf(name) {
+		const server = this.settings().mcpServers.find((s) => s.serverName === name);
+		const running = this.mcpEntries.has(name);
+		const tools = this.listMcpTools().filter((t) => t.name.startsWith(`mcp__${name}__`));
+		const lastError = this.mcpErrors.get(name);
+		return {
+			serverName: name,
+			transport: server?.transport ?? "stdio",
+			enabled: server?.enabled ?? false,
+			running,
+			toolCount: tools.length,
+			tools,
+			...lastError !== void 0 ? { lastError } : {}
+		};
+	}
+	/** Compute the full runtime status map for all configured servers. */
+	computeMcpStatus() {
+		const status = {};
+		for (const server of this.settings().mcpServers) status[server.serverName] = this.statusOf(server.serverName);
+		return status;
+	}
+	/**
+	* Publish the runtime status map into the settings namespace so the Web
+	* panel (which reads settings over the connection RPC, not Typert) can
+	* render per-server tools, running state, and last error. Skips the write
+	* when nothing changed to avoid a settings-watch reconcile loop.
+	*/
+	async publishMcpStatus() {
+		const current = this.settings().mcpStatus ?? {};
+		const next = this.computeMcpStatus();
+		if (JSON.stringify(current) === JSON.stringify(next)) return;
+		await this.settingsService?.mutate(settingsNamespace(SETTINGS_NAMESPACE), [{
+			op: "set",
+			path: ["mcpStatus"],
+			value: next
+		}]);
+	}
+	/**
+	* Process a one-shot test request written by the Web panel. Idempotent per
+	* timestamp: ensures the server is started, waits for tool discovery, then
+	* republishes status so the panel sees the live result.
+	*/
+	handleMcpTestRequest() {
+		const req = this.settings().mcpTestRequest;
+		if (req === void 0) return;
+		const last = this.lastTestTs.get(req.serverName) ?? 0;
+		if (req.ts <= last) return;
+		this.lastTestTs.set(req.serverName, req.ts);
+		this.runMcpTest(req.serverName);
+	}
+	/** Start (if needed) one server, wait for tools, then republish status. */
+	async runMcpTest(name) {
+		if (!this.mcpEntries.has(name)) await this.startMcpServer(name);
+		await new Promise((resolve) => setTimeout(resolve, 1500));
+		await this.publishMcpStatus();
 	}
 	/** Add a new MCP server config and start it if enabled. */
 	async addMcpServer(config) {
@@ -1080,8 +1374,10 @@ var Switchblade = class extends Service {
 				}
 			});
 			this.mcpEntries.set(name, id);
+			this.mcpErrors.delete(name);
 			this.ctx.logger.warn(`[switchblade] started MCP server ${name}`);
 		} catch (error) {
+			this.mcpErrors.set(name, String(error));
 			this.ctx.logger.warn(`[switchblade] failed to start MCP server ${name}: ${String(error)}`);
 		}
 	}
@@ -1096,6 +1392,7 @@ var Switchblade = class extends Service {
 			this.ctx.logger.warn(`[switchblade] failed to stop MCP server ${name}: ${String(error)}`);
 		}
 		this.mcpEntries.delete(name);
+		this.mcpErrors.delete(name);
 	}
 	/** List all MCP tools currently registered on ctx.tools. */
 	listMcpTools() {

@@ -20,11 +20,15 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import { cp, mkdir, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, extname, join } from 'node:path'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { CommandDescriptor, CommandDefinition, CommandResult } from '@deepseek-ai/dsh-commands'
 import { settingsNamespace, type SettingsScope, type default as SettingsService } from '@deepseek-ai/dsh-settings'
@@ -45,6 +49,104 @@ const execFileAsync = promisify(execFile)
 
 /** Switchblade settings namespace name. */
 export const SETTINGS_NAMESPACE = 'switchblade'
+
+/** Same-origin background API prefix the browser half fetches on startup. */
+export const BACKGROUND_API_PREFIX = '/api/switchblade-wallpaper'
+
+/** Durable user background section (wallpaper + effect knobs). */
+export interface BackgroundSettings {
+  enabled: boolean
+  /** Media kind of the wallpaper source. */
+  kind: 'image' | 'video'
+  /** Id of an uploaded file stored on disk ('' = none). Never stores bytes here. */
+  uploadId: string
+  /** External image URL ('' = none, used when no uploadId). */
+  url: string
+  /** Wallpaper media opacity (0..1). */
+  opacity: number
+  /** Readability scrim strength (0..1), black in dark / white in light. */
+  scrim: number
+  /** Panel transparency (0..1); 1 keeps official opaque surfaces. */
+  panelOpacity: number
+  /** Frosted-glass blur radius on glassed surfaces (px). */
+  blur: number
+  /** Blur of the wallpaper itself (px). */
+  wallpaperBlur: number
+  /** Fit: cover (fill/crop) or contain (letterbox). */
+  fit: 'cover' | 'contain'
+}
+
+/** Defaults merged over the stored user section when reading. */
+const DEFAULT_BACKGROUND: Readonly<BackgroundSettings> = {
+  enabled: false, kind: 'image', uploadId: '', url: '', opacity: 1, scrim: 0.25, panelOpacity: 1, blur: 16, wallpaperBlur: 0, fit: 'cover',
+}
+
+const BACKGROUND_FIELDS = ['enabled', 'kind', 'uploadId', 'url', 'opacity', 'scrim', 'panelOpacity', 'blur', 'wallpaperBlur', 'fit'] as const
+
+/** Plugin-owned media dir under the harness home (bytes live on disk, never in settings). */
+function wallpaperDir(): string {
+  const dir = join(homedir(), '.dsh', 'wallpapers')
+  mkdir(dir, { recursive: true }).catch(() => {})
+  return dir
+}
+const ACCEPTED_MEDIA: Record<string, { ext: string; kind: 'image' | 'video' }> = {
+  'image/jpeg': { ext: 'jpg', kind: 'image' }, 'image/png': { ext: 'png', kind: 'image' },
+  'image/webp': { ext: 'webp', kind: 'image' }, 'image/gif': { ext: 'gif', kind: 'image' },
+  'image/svg+xml': { ext: 'svg', kind: 'image' },
+  'video/mp4': { ext: 'mp4', kind: 'video' }, 'video/webm': { ext: 'webm', kind: 'video' },
+}
+
+/** JSON helper for route responses. */
+function jsonResponse(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
+  res.end(JSON.stringify(body))
+}
+
+/** Loopback host check for the same-origin fence (see the reference skin plugins). */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
+function isLoopbackHost(host: string): boolean {
+  let bare = host
+  if (host.startsWith('[')) {
+    const end = host.indexOf(']')
+    if (end !== -1) bare = host.slice(0, end + 1)
+  } else {
+    const colon = host.indexOf(':')
+    if (colon !== -1) bare = host.slice(0, colon)
+  }
+  return LOOPBACK_HOSTS.has(bare) || LOOPBACK_HOSTS.has(host)
+}
+
+/** Reject cross-site browser requests against the local wallpaper endpoint. */
+function isSameOriginRequest(req: IncomingMessage): boolean {
+  if (req.headers['sec-fetch-site'] === 'cross-site') return false
+  const host = req.headers.host
+  if (typeof host !== 'string' || !isLoopbackHost(host)) return false
+  const origin = req.headers.origin
+  if (typeof origin === 'string' && origin !== '' && origin !== 'null') {
+    try { return new URL(origin).host === host } catch { return false }
+  }
+  return true
+}
+
+/** Read a bounded JSON body without destroying the socket. */
+function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const parts: Buffer[] = []
+    let size = 0
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length
+      if (size > 4096) { req.pause(); reject(new Error('body-too-large')); return }
+      parts.push(chunk)
+    })
+    req.on('end', () => {
+      try {
+        const text = Buffer.concat(parts).toString('utf8')
+        resolve(text === '' ? {} : JSON.parse(text) as Record<string, unknown>)
+      } catch { reject(new Error('invalid-json')) }
+    })
+    req.on('error', reject)
+  })
+}
 
 /** One user-authored prompt (CCswitch-style), persisted and injected globally. */
 export interface ManagedPrompt {
@@ -74,6 +176,10 @@ export interface SwitchbladeSettings {
   readonly prompts: readonly ManagedPrompt[]
   /** Configured MCP servers (each bridges one external MCP server's tools). */
   readonly mcpServers: readonly McpServerConfig[]
+  /** Runtime status of each configured MCP server, maintained by the Host. */
+  readonly mcpStatus: Readonly<Record<string, McpServerStatus>>
+  /** One-shot test request written by the Web panel; the Host processes it. */
+  readonly mcpTestRequest?: { readonly serverName: string; readonly ts: number }
 }
 
 /** Runtime schema for the persisted slice. */
@@ -82,6 +188,9 @@ export const SwitchbladeSettingsSchema = z.object({
   customCommands: z.array(z.any()).default([]),
   prompts: z.array(z.any()).default([]),
   mcpServers: z.array(z.any()).default([]),
+  mcpStatus: z.dict(z.any()).default({}),
+  mcpTestRequest: z.any(),
+  background: z.any(),
 })
 
 /** One prompt section id prefix registered on ctx.systemPrompt. */
@@ -124,6 +233,12 @@ export class Switchblade extends Service {
   /** Live mcp-client loader entry ids, keyed by serverName. */
   private readonly mcpEntries = new Map<string, string>()
 
+  /** Last startup/connection error per serverName, surfaced in mcpStatus. */
+  private readonly mcpErrors = new Map<string, string>()
+
+  /** Last processed test-request timestamp per serverName (idempotency guard). */
+  private readonly lastTestTs = new Map<string, number>()
+
   /** The settings namespace scope; present only while a settings provider is composed. */
   private settingsScope: SettingsScope<SwitchbladeSettings> | undefined
 
@@ -135,7 +250,7 @@ export class Switchblade extends Service {
     ctx.logger.warn('[switchblade] Switchblade service constructed')
 
     // Persistence, attached lazily like the agent-presets precedent.
-    ctx.inject(['settings'], (settingsCtx) => {
+    ctx.inject(['settings', 'webServer'], (settingsCtx) => {
       const scope = settingsCtx.settings.register(
         settingsNamespace(SETTINGS_NAMESPACE),
         SwitchbladeSettingsSchema,
@@ -162,6 +277,8 @@ export class Switchblade extends Service {
           try { this.applyPromptRegistrations() } catch (e) { settingsCtx.logger.warn(`[switchblade] prompt reconcile: ${String(e)}`) }
           try { this.applySkillRegistrations() } catch (e) { settingsCtx.logger.warn(`[switchblade] skill reconcile: ${String(e)}`) }
           try { this.reconcileMcpServers() } catch (e) { settingsCtx.logger.warn(`[switchblade] mcp reconcile: ${String(e)}`) }
+          try { this.handleMcpTestRequest() } catch (e) { settingsCtx.logger.warn(`[switchblade] mcp test reconcile: ${String(e)}`) }
+          try { void this.publishMcpStatus() } catch (e) { settingsCtx.logger.warn(`[switchblade] mcp status reconcile: ${String(e)}`) }
           reconciling = false
         })
       }
@@ -173,6 +290,11 @@ export class Switchblade extends Service {
       // Reinstall the persisted owned rows on startup.
       settingsCtx.logger.warn(`[switchblade] settings registered; prompts=${scope.get().prompts.length} skills=${scope.get().installedSkills.length}`)
       this.reinstall(scope.get())
+      try {
+        for (const route of this.wallpaperRoutes()) {
+          settingsCtx.effect(() => { try { settingsCtx.webServer.register(route) } catch (e) { settingsCtx.logger.warn(`[switchblade] route failed: ${String(e)}`) } }, 'switchblade: bg route')
+        }
+      } catch (e) { settingsCtx.logger.warn(`[switchblade] route setup failed: ${String(e)}`) }
     })
 
     // Command registration moved to the entry plugin's apply(ctx) — the
@@ -182,7 +304,7 @@ export class Switchblade extends Service {
 
   /** All persisted state, merged over schema defaults. */
   private settings(): SwitchbladeSettings {
-    return this.settingsScope?.get() ?? { installedSkills: [], customCommands: [], prompts: [] }
+    return this.settingsScope?.get() ?? { installedSkills: [], customCommands: [], prompts: [], mcpServers: [], mcpStatus: {} }
   }
 
   // ---------------------------------------------------------------------------
@@ -693,6 +815,71 @@ export class Switchblade extends Service {
     for (const server of settings.mcpServers) {
       if (server.enabled) void this.startMcpServer(server.serverName)
     }
+    // Publish runtime status so the panel renders tools/state on first open.
+    void this.publishMcpStatus()
+  }
+
+  // ---------------------------------------------------------------------------
+  // Global wallpaper (persisted via the settings document; served to the
+  // browser half through a same-origin route so it survives restarts)
+  // ---------------------------------------------------------------------------
+
+  /** Persist the background section through the switchblade settings document. */
+  async writeBackground(section: Record<string, unknown>): Promise<void> {
+    await this.settingsService?.mutate(
+      settingsNamespace(SETTINGS_NAMESPACE),
+      [{ op: 'set', path: ['background'], value: section }],
+    )
+  }
+
+  /** Read the resolved background section (defaults merged over the user layer). */
+  private readBackground(): BackgroundSettings {
+    const raw = this.settings().background as Partial<BackgroundSettings> | undefined
+    return { ...DEFAULT_BACKGROUND, ...(raw ?? {}) } as BackgroundSettings
+  }
+
+  /**
+   * Same-origin media routes: POST /upload stores a local image/video on disk
+   * (bytes NEVER enter the settings document, so it stays well under the size
+   * cap and survives restarts) and GET /image/<id> serves it back. Mirrors the
+   * reference dsh-background / skin-center pattern.
+   */
+  private wallpaperRoutes(): WebRoute[] {
+    const readRawBody = (req: IncomingMessage, limit: number): Promise<Buffer> =>
+      new Promise((resolve, reject) => {
+        const chunks: Buffer[] = []; let size = 0
+        req.on('data', (c: Buffer) => { size += c.length; if (size > limit) { req.pause(); reject(new Error('body-too-large')); return } chunks.push(c) })
+        req.on('end', () => resolve(Buffer.concat(chunks)))
+        req.on('error', reject)
+      })
+    const upload = { kind: 'exact' as const, path: `${BACKGROUND_API_PREFIX}/upload`, handler: async (req: IncomingMessage, res: ServerResponse) => {
+      if (!isSameOriginRequest(req)) { jsonResponse(res, 403, { ok: false, error: 'rejected' }); return }
+      if (req.method !== 'POST') { jsonResponse(res, 405, { ok: false, error: 'method-not-allowed' }); return }
+      const mime = (req.headers['content-type'] ?? '').split(';')[0]?.trim() ?? ''
+      const meta = ACCEPTED_MEDIA[mime]
+      if (meta === undefined) { jsonResponse(res, 400, { ok: false, error: 'unsupported-media-type' }); return }
+      try {
+        const body = await readRawBody(req, 60 * 1024 * 1024)
+        if (body.length === 0) { jsonResponse(res, 400, { ok: false, error: 'empty-body' }); return }
+        const id = 'up-' + randomBytes(12).toString('hex')
+        await writeFile(join(wallpaperDir(), `${id}.${meta.ext}`), body)
+        jsonResponse(res, 200, { ok: true, id, kind: meta.kind, url: `${BACKGROUND_API_PREFIX}/image/${id}` })
+      } catch (error) { jsonResponse(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) }) }
+    } }
+    const serve = { kind: 'prefix' as const, path: `${BACKGROUND_API_PREFIX}/image`, handler: async (req: IncomingMessage, res: ServerResponse) => {
+      if (!isSameOriginRequest(req)) { jsonResponse(res, 403, { ok: false, error: 'rejected' }); return }
+      if (req.method !== 'GET') { jsonResponse(res, 405, { ok: false }); return }
+      const id = (req.url ?? '').slice(`${BACKGROUND_API_PREFIX}/image`.length + 1).replace(/[^a-z0-9.-]/gi, '')
+      if (!/^up-[a-f0-9]{24}/.test(id)) { jsonResponse(res, 404, { ok: false }); return }
+      const dir = join(homedir(), '.dsh', 'wallpapers')
+      if (!existsSync(dir)) { jsonResponse(res, 404, { ok: false }); return }
+      const found = Object.values(ACCEPTED_MEDIA).map((m) => join(dir, id.endsWith(m.ext) ? id : `${id}.${m.ext}`)).find((p) => existsSync(p))
+      if (found === undefined) { jsonResponse(res, 404, { ok: false }); return }
+      const mime = extname(found).slice(1) === 'mp4' ? 'video/mp4' : extname(found).slice(1) === 'webm' ? 'video/webm' : `image/${extname(found).slice(1).replace('jpg', 'jpeg')}`
+      res.writeHead(200, { 'content-type': mime, 'cache-control': 'public, max-age=31536000, immutable' })
+      res.end(await readFile(found))
+    } }
+    return [upload, serve]
   }
 
   // ---------------------------------------------------------------------------
@@ -719,18 +906,71 @@ export class Switchblade extends Service {
 
   /** List all configured MCP servers with their runtime status. */
   async listMcpServers(): Promise<McpServerStatus[]> {
-    const tools = this.listMcpTools()
-    return this.settings().mcpServers.map((server) => {
-      const running = this.mcpEntries.has(server.serverName)
-      const toolCount = tools.filter((t) => t.name.startsWith(`mcp__${server.serverName}__`)).length
-      return {
-        serverName: server.serverName,
-        transport: server.transport,
-        enabled: server.enabled,
-        running,
-        toolCount,
-      }
-    })
+    return this.settings().mcpServers.map((server) => this.statusOf(server.serverName))
+  }
+
+  /** Compute the runtime status of one configured server. */
+  private statusOf(name: string): McpServerStatus {
+    const server = this.settings().mcpServers.find((s) => s.serverName === name)
+    const running = this.mcpEntries.has(name)
+    const tools = this.listMcpTools().filter((t) => t.name.startsWith(`mcp__${name}__`))
+    const lastError = this.mcpErrors.get(name)
+    return {
+      serverName: name,
+      transport: server?.transport ?? 'stdio',
+      enabled: server?.enabled ?? false,
+      running,
+      toolCount: tools.length,
+      tools,
+      ...(lastError !== undefined ? { lastError } : {}),
+    }
+  }
+
+  /** Compute the full runtime status map for all configured servers. */
+  private computeMcpStatus(): Record<string, McpServerStatus> {
+    const status: Record<string, McpServerStatus> = {}
+    for (const server of this.settings().mcpServers) {
+      status[server.serverName] = this.statusOf(server.serverName)
+    }
+    return status
+  }
+
+  /**
+   * Publish the runtime status map into the settings namespace so the Web
+   * panel (which reads settings over the connection RPC, not Typert) can
+   * render per-server tools, running state, and last error. Skips the write
+   * when nothing changed to avoid a settings-watch reconcile loop.
+   */
+  private async publishMcpStatus(): Promise<void> {
+    const current = this.settings().mcpStatus ?? {}
+    const next = this.computeMcpStatus()
+    if (JSON.stringify(current) === JSON.stringify(next)) return
+    await this.settingsService?.mutate(
+      settingsNamespace(SETTINGS_NAMESPACE),
+      [{ op: 'set', path: ['mcpStatus'], value: next }],
+    )
+  }
+
+  /**
+   * Process a one-shot test request written by the Web panel. Idempotent per
+   * timestamp: ensures the server is started, waits for tool discovery, then
+   * republishes status so the panel sees the live result.
+   */
+  private handleMcpTestRequest(): void {
+    const req = this.settings().mcpTestRequest
+    if (req === undefined) return
+    const last = this.lastTestTs.get(req.serverName) ?? 0
+    if (req.ts <= last) return
+    this.lastTestTs.set(req.serverName, req.ts)
+    void this.runMcpTest(req.serverName)
+  }
+
+  /** Start (if needed) one server, wait for tools, then republish status. */
+  private async runMcpTest(name: string): Promise<void> {
+    if (!this.mcpEntries.has(name)) await this.startMcpServer(name)
+    // Give the mcp-client a moment to discover and register tools.
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    await this.publishMcpStatus()
   }
 
   /** Add a new MCP server config and start it if enabled. */
@@ -784,8 +1024,10 @@ export class Switchblade extends Service {
         },
       })
       this.mcpEntries.set(name, id)
+      this.mcpErrors.delete(name)
       this.ctx.logger.warn(`[switchblade] started MCP server ${name}`)
     } catch (error) {
+      this.mcpErrors.set(name, String(error))
       this.ctx.logger.warn(`[switchblade] failed to start MCP server ${name}: ${String(error)}`)
     }
   }
@@ -799,6 +1041,7 @@ export class Switchblade extends Service {
       try { await loader.remove(id) } catch (error) { this.ctx.logger.warn(`[switchblade] failed to stop MCP server ${name}: ${String(error)}`) }
     }
     this.mcpEntries.delete(name)
+    this.mcpErrors.delete(name)
   }
 
   /** List all MCP tools currently registered on ctx.tools. */

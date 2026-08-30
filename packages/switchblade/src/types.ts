@@ -127,6 +127,10 @@ export interface McpServerStatus {
   readonly running: boolean
   /** Number of tools currently registered from this server. */
   readonly toolCount: number
+  /** Tools currently registered from this server (server-qualified names). */
+  readonly tools: readonly McpToolInfo[]
+  /** Last startup/connection error, if any. */
+  readonly lastError?: string
 }
 
 /** One MCP tool registered on `ctx.tools` under a server-qualified name. */

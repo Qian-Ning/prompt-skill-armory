@@ -64,7 +64,7 @@ export declare class SwitchbladeSectionController {
     private readonly sessionId?;
     /** Snapshot store backing the section's view state. */
     readonly store: SnapshotStore<SwitchbladeSectionState>;
-    constructor(api: ConnectionHandle['api'], sessionId?: (() => SessionId | undefined) | undefined);
+    constructor(api: ConnectionHandle['api'], sessionId?: () => SessionId | undefined);
     /**
      * Load skills, presets, prompts, and installed skills. Prompts and installed
      * skills come from the `switchblade` settings namespace (the Host watches
@@ -158,4 +158,3 @@ export interface SwitchbladeSectionInjected {
     uninstallSkill: (name: string) => Promise<void>;
     installSkillFromZip: (name: string, dataBase64: string) => Promise<void>;
 }
-//# sourceMappingURL=store.d.ts.map

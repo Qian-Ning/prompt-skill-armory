@@ -8,4 +8,3 @@
 export function apply() { }
 /** Cordis plugin identity (host face). */
 export const name = 'ui-switchblade';
-//# sourceMappingURL=index.js.map

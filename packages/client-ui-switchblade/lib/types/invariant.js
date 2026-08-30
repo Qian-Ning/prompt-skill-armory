@@ -6,4 +6,3 @@
 export const SECTION_ID = 'switchblade';
 /** Display order in the settings nav (after Models/Agent Presets). */
 export const SECTION_ORDER = 30;
-//# sourceMappingURL=invariant.js.map

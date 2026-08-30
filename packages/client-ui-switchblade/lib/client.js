@@ -99,6 +99,422 @@ window.__ModuleLoader__.load({
 			cliHint: "Install via CLI (type in a session):"
 		};
 		//#endregion
+		//#region src/client/background.ts
+		/** Built-in fancy gradient text schemes for the hint/stats line. */
+		const GRADIENTS = [
+			{
+				id: "",
+				name: "纯色",
+				css: ""
+			},
+			{
+				id: "aurora",
+				name: "极光",
+				css: "linear-gradient(90deg,#58a6ff,#8b5cf6,#ec4899)"
+			},
+			{
+				id: "fire",
+				name: "火焰",
+				css: "linear-gradient(90deg,#fbbf24,#f97316,#ef4444)"
+			},
+			{
+				id: "sky",
+				name: "晴空",
+				css: "linear-gradient(90deg,#38bdf8,#818cf8)"
+			},
+			{
+				id: "neon",
+				name: "霓虹",
+				css: "linear-gradient(90deg,#22d3ee,#a78bfa,#f0abfc)"
+			},
+			{
+				id: "ocean",
+				name: "海洋",
+				css: "linear-gradient(90deg,#34d399,#22d3ee,#3b82f6)"
+			},
+			{
+				id: "sunset",
+				name: "晚霞",
+				css: "linear-gradient(90deg,#f472b6,#fb923c,#f59e0b)"
+			}
+		];
+		const DEFAULT_BACKGROUND = {
+			enabled: false,
+			kind: "image",
+			uploadId: "",
+			url: "",
+			opacity: 1,
+			scrim: .25,
+			panelOpacity: 1,
+			blur: 16,
+			wallpaperBlur: 0,
+			fit: "cover",
+			hint: {
+				enabled: false,
+				color: "#79c0ff",
+				size: 11,
+				gradient: ""
+			}
+		};
+		const ACTIVE_ATTR = "data-ar-bg";
+		const GLASS_ATTR = "data-ar-glass";
+		const CSS_TAG = "prompt-skill-armory/background";
+		const BACKGROUND_CSS = `
+  .ar-bg-layer { position: fixed; inset: 0; z-index: -2; overflow: hidden; pointer-events: none; }
+  .ar-bg-layer .ar-bg-image { width: 100%; height: 100%; display: block; border: 0;
+    object-fit: var(--ar-bg-fit, cover); opacity: var(--ar-bg-opacity, 1);
+    filter: blur(var(--ar-bg-blur, 0px)); transform: scale(var(--ar-bg-scale, 1)); transform-origin: center; }
+  .ar-bg-scrim { position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background: rgba(255,255,255, var(--ar-bg-scrim, 0.25)); }
+  body[data-ds-dark-theme] .ar-bg-scrim { background: rgba(0,0,0, var(--ar-bg-scrim, 0.25)); }
+  body[${ACTIVE_ATTR}] { --dsw-alias-bg-base: transparent; --dsw-specific-sidebar-fill: transparent; }
+  body[${GLASS_ATTR}] [data-composer-card],
+  body[${GLASS_ATTR}] [class*="_bubble"]:not([role="tooltip"]),
+  body[${GLASS_ATTR}] .md-code-block,
+  body[${GLASS_ATTR}] [data-terminal], body[${GLASS_ATTR}] [data-diff],
+  body[${GLASS_ATTR}] [data-read], body[${GLASS_ATTR}] [data-search],
+  body[${GLASS_ATTR}] [data-web], body[${GLASS_ATTR}] [class*="_ioCard"],
+  body[${GLASS_ATTR}] [class*="_instructionsCard"],
+  body[${GLASS_ATTR}] [class*="_markdown"] :not(pre) > code {
+    background-image: linear-gradient(180deg, rgba(255,255,255, var(--ar-glass-sheen, 0.07)), rgba(255,255,255, var(--ar-glass-sheen-mid, 0.02)) 38%, rgba(255,255,255, 0.01));
+    -webkit-backdrop-filter: blur(var(--ar-glass-blur, 16px)) saturate(var(--ar-glass-saturate, 1.4)) brightness(var(--ar-glass-brightness, 1)) contrast(1.01);
+    backdrop-filter: blur(var(--ar-glass-blur, 16px)) saturate(var(--ar-glass-saturate, 1.4)) brightness(var(--ar-glass-brightness, 1)) contrast(1.01);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.32), inset 0 -1px 0 rgba(255,255,255,0.08), inset 0 0 0 0.5px rgba(255,255,255,0.08), 0 12px 40px rgba(0,0,0,0.12);
+  }
+  body[${ACTIVE_ATTR}] .md-code-block [class*="_bannerWrap"] { background-color: var(--dsw-alias-markdown-code-block-banner); }
+`;
+		function injectBackgroundCss() {
+			try {
+				if (document.querySelector(`style[data-plugin-css="${CSS_TAG}"]`)) return;
+				const tag = document.createElement("style");
+				tag.dataset.plugin = "prompt-skill-armory";
+				tag.dataset.pluginCss = CSS_TAG;
+				tag.textContent = BACKGROUND_CSS;
+				document.head.appendChild(tag);
+			} catch {}
+		}
+		const GLASS_TOKENS = [
+			"--dsw-specific-input-major",
+			"--dsw-specific-bubble",
+			"--dsw-alias-markdown-code-block",
+			"--dsw-alias-markdown-code-block-banner",
+			"--dsw-alias-markdown-inline-code",
+			"--dsw-specific-tip"
+		];
+		function glassAlpha(panelOpacity) {
+			const alpha = .05 + panelOpacity * .85;
+			return Math.max(0, Math.min(.9, alpha));
+		}
+		var BackgroundPainter = class {
+			layer = null;
+			img = null;
+			scrim = null;
+			observer;
+			settings;
+			saved = /* @__PURE__ */ new Map();
+			rememberOnce(prop) {
+				if (this.saved.has(prop)) return;
+				try {
+					this.saved.set(prop, document.body.style.getPropertyValue(prop));
+				} catch {
+					this.saved.set(prop, "");
+				}
+			}
+			setVar(name, value) {
+				this.rememberOnce(name);
+				try {
+					document.body.style.setProperty(name, value);
+				} catch {}
+			}
+			apply(settings) {
+				this.settings = settings;
+				if (!settings.enabled) {
+					this.dispose();
+					return;
+				}
+				try {
+					injectBackgroundCss();
+					const hasSource = settings.url !== "" || settings.uploadId !== "";
+					for (const prop of ["--dsw-alias-bg-base", "--dsw-specific-sidebar-fill"]) {
+						this.rememberOnce(prop);
+						document.body.style.setProperty(prop, "transparent");
+					}
+					if (!hasSource) {
+						this.removeLayers();
+						document.body.removeAttribute(ACTIVE_ATTR);
+						this.applyGlass(settings, true);
+						return;
+					}
+					const mediaUrl = settings.uploadId !== "" ? `/api/switchblade-wallpaper/image/${settings.uploadId}` : settings.url;
+					const isVideo = settings.kind === "video";
+					if (!this.layer) {
+						this.layer = document.createElement("div");
+						this.layer.className = "ar-bg-layer";
+						this.img = document.createElement(isVideo ? "video" : "img");
+						this.img.className = "ar-bg-image";
+						if (isVideo) {
+							this.img.setAttribute("autoplay", "");
+							this.img.setAttribute("loop", "");
+							this.img.setAttribute("muted", "");
+							this.img.setAttribute("playsinline", "");
+						} else {
+							this.img.referrerPolicy = "no-referrer";
+							this.img.alt = "";
+						}
+						this.img.onerror = () => {
+							if (this.img && this.img.dataset.failed !== "1") {
+								this.img.dataset.failed = "1";
+								this.img.style.visibility = "hidden";
+							}
+						};
+						this.layer.appendChild(this.img);
+						document.body.appendChild(this.layer);
+					}
+					if (this.img && this.img.getAttribute("src") !== mediaUrl) {
+						delete this.img.dataset.failed;
+						this.img.style.visibility = "";
+						this.img.setAttribute("src", mediaUrl);
+					}
+					if (!this.scrim) {
+						this.scrim = document.createElement("div");
+						this.scrim.className = "ar-bg-scrim";
+						document.body.appendChild(this.scrim);
+					}
+					document.body.setAttribute(ACTIVE_ATTR, "on");
+					document.body.style;
+					this.setVar("--ar-bg-fit", settings.fit);
+					this.setVar("--ar-bg-opacity", String(settings.opacity));
+					this.setVar("--ar-bg-blur", `${settings.wallpaperBlur}px`);
+					this.setVar("--ar-bg-scale", (1 + settings.wallpaperBlur * .006).toFixed(4));
+					this.setVar("--ar-bg-scrim", String(settings.scrim));
+					this.setVar("--ar-glass-blur", `${settings.blur}px`);
+					this.setVar("--ar-glass-saturate", String(settings.blur > 0 ? Math.round(Math.min(1.6, 1.1 + settings.blur * .02) * 1e3) / 1e3 : 1));
+					this.setVar("--ar-glass-brightness", document.body.dataset.dsDarkTheme !== void 0 ? "1.04" : "0.98");
+					this.setVar("--ar-glass-sheen", document.body.dataset.dsDarkTheme !== void 0 ? "0.16" : "0.07");
+					this.setVar("--ar-glass-sheen-mid", document.body.dataset.dsDarkTheme !== void 0 ? "0.05" : "0.02");
+					this.applyGlass(settings, false);
+					if (!this.observer) {
+						this.observer = new MutationObserver(() => {
+							if (this.settings) this.applyGlass(this.settings, false);
+						});
+						this.observer.observe(document.body, {
+							attributes: true,
+							attributeFilter: ["data-ds-dark-theme"]
+						});
+					}
+				} catch {
+					this.dispose();
+				}
+			}
+			dispose() {
+				try {
+					this.observer?.disconnect();
+					this.observer = void 0;
+					this.removeLayers();
+					const s = document.body.style;
+					document.body.removeAttribute(ACTIVE_ATTR);
+					document.body.removeAttribute(GLASS_ATTR);
+					for (const [prop, value] of this.saved) s.setProperty(prop, value);
+					this.saved.clear();
+					this.settings = void 0;
+				} catch {}
+			}
+			applyGlass(settings, forceRestore) {
+				try {
+					const s = document.body.style;
+					for (const t of GLASS_TOKENS) this.rememberOnce(t);
+					if (forceRestore || settings === void 0 || settings.panelOpacity >= 1) {
+						for (const t of GLASS_TOKENS) {
+							const o = this.saved.get(t);
+							if (o !== void 0 && o !== "") s.setProperty(t, o);
+							else s.removeProperty(t);
+						}
+						document.body.removeAttribute(GLASS_ATTR);
+						this.setVar("--ar-glass-blur", "0px");
+						return;
+					}
+					document.body.setAttribute(GLASS_ATTR, "on");
+					const inDark = document.body.dataset.dsDarkTheme !== void 0;
+					const alpha = glassAlpha(settings.panelOpacity) * (inDark ? .4 : .8);
+					for (const t of GLASS_TOKENS) s.setProperty(t, `rgba(255,255,255,${alpha.toFixed(3)})`);
+				} catch {}
+			}
+			removeLayers() {
+				try {
+					if (this.layer) {
+						this.layer.remove();
+						this.layer = null;
+						this.img = null;
+					}
+					if (this.scrim) {
+						this.scrim.remove();
+						this.scrim = null;
+					}
+				} catch {}
+			}
+		};
+		const painter = new BackgroundPainter();
+		const bgState = {
+			status: "loading",
+			value: DEFAULT_BACKGROUND
+		};
+		const bgListeners = /* @__PURE__ */ new Set();
+		const notifyBg = () => {
+			for (const l of bgListeners) l();
+		};
+		let bgApi;
+		/** Bind the transport to a live connection API (set once at plugin apply). */
+		function initBackgroundClient(api) {
+			bgApi = api;
+		}
+		/** Surface key: separate wallpaper per web vs desktop (they share the settings doc). */
+		const isDesktopSurface = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("electron");
+		const surfaceKey = () => isDesktopSurface ? "backgroundDesktop" : "backgroundWeb";
+		/** Read the background section for the current surface from the switchblade settings. */
+		function readSection(value) {
+			const raw = (value.namespaces?.find((n) => n.ns === "switchblade")?.value)?.[surfaceKey()];
+			return {
+				...DEFAULT_BACKGROUND,
+				...typeof raw === "object" && raw !== null ? raw : {}
+			};
+		}
+		const backgroundClient = {
+			getSnapshot() {
+				return bgState;
+			},
+			subscribe(l) {
+				bgListeners.add(l);
+				return () => {
+					bgListeners.delete(l);
+				};
+			},
+			/** Fetch the durable section. @returns true on success (status ready). */
+			async load() {
+				if (bgApi === void 0) {
+					bgState.status = "error";
+					return false;
+				}
+				try {
+					const res = await bgApi.settings.describe({});
+					if (!res.result.ok) throw new Error(res.result.error.message);
+					bgState.status = "ready";
+					bgState.value = readSection(res.result.value);
+					notifyBg();
+					return true;
+				} catch {
+					bgState.status = "error";
+					return false;
+				}
+			},
+			async save(section) {
+				if (bgApi === void 0) return;
+				try {
+					const res = await bgApi.settings.mutate({
+						ns: "switchblade",
+						ops: [{
+							op: "set",
+							path: [surfaceKey()],
+							value: section
+						}]
+					});
+					if (!res.result.ok) throw new Error(res.result.error.message);
+					bgState.status = "ready";
+					bgState.value = { ...section };
+				} catch {
+					bgState.status = "error";
+					bgState.value = section;
+				}
+				notifyBg();
+			}
+		};
+		/** Upload a local image/video to the Host (bytes go to disk, never settings). */
+		async function uploadMedia(file) {
+			try {
+				const res = await fetch("/api/switchblade-wallpaper/upload", {
+					method: "POST",
+					headers: { "content-type": file.type },
+					body: file
+				});
+				const body = await res.json();
+				if (!res.ok || !body.ok || !body.id || !body.kind || !body.url) return null;
+				return {
+					id: body.id,
+					kind: body.kind,
+					url: body.url
+				};
+			} catch {
+				return null;
+			}
+		}
+		/** Apply a full section through the painter (idempotent, never throws). */
+		function applyBackground(section) {
+			try {
+				painter.apply(section);
+			} catch {}
+			applyHintStyle();
+		}
+		let hintObserver;
+		/** Inject (or clear) the per-surface style for the composer's hint row + dock stats line. */
+		function applyHintStyle() {
+			try {
+				const hint = (bgState.value ?? DEFAULT_BACKGROUND).hint ?? DEFAULT_BACKGROUND.hint;
+				const existing = document.getElementById("switchblade-hint");
+				if (!hint.enabled) {
+					if (existing !== null) existing.remove();
+					hintObserver?.disconnect();
+					hintObserver = void 0;
+					return;
+				}
+				if (existing === null) {
+					const t = document.createElement("style");
+					t.id = "switchblade-hint";
+					document.head.appendChild(t);
+				}
+				const tag = document.getElementById("switchblade-hint");
+				const color = hint.color || (isDesktopSurface ? "#7ee787" : "#79c0ff");
+				const size = hint.size || 11;
+				const grad = hint.gradient ?? "";
+				let hintCss = `[data-decoration="hint"]{font-size:${size}px;letter-spacing:0.3px;font-weight:600;opacity:0.95;`;
+				const statsStyle = (root) => {
+					if (grad !== "") {
+						root.style.backgroundImage = grad;
+						root.style.webkitBackgroundClip = "text";
+						root.style.backgroundClip = "text";
+						root.style.color = "transparent";
+					} else {
+						root.style.backgroundImage = "none";
+						root.style.webkitBackgroundClip = "initial";
+						root.style.backgroundClip = "initial";
+						root.style.color = color;
+					}
+					root.style.fontSize = `${size}px`;
+					root.style.fontWeight = "600";
+					root.style.opacity = "0.95";
+				};
+				if (grad !== "") hintCss += `background-image:${grad};-webkit-background-clip:text;background-clip:text;color:transparent`;
+				else hintCss += `color:${color}`;
+				hintCss += "}";
+				tag.textContent = hintCss;
+				const applyStats = () => {
+					try {
+						const seps = Array.from(document.querySelectorAll("span[aria-hidden]"));
+						for (const sep of seps) {
+							if (sep.textContent !== "|") continue;
+							const root = sep.parentElement;
+							if (root !== null) statsStyle(root);
+						}
+					} catch {}
+				};
+				if (hintObserver !== void 0) hintObserver.disconnect();
+				hintObserver = new MutationObserver(applyStats);
+				hintObserver.observe(document.body, {
+					childList: true,
+					subtree: true
+				});
+				applyStats();
+			} catch {}
+		}
+		//#endregion
 		//#region src/client/SwitchbladeSection.tsx
 		/**
 		* Prompt-SkillArmory management page.
@@ -273,6 +689,35 @@ window.__ModuleLoader__.load({
 				paddingRight: "6px",
 				minHeight: "0"
 			},
+			wallGrid: {
+				flex: 1,
+				overflowY: "auto",
+				display: "grid",
+				gridTemplateColumns: "repeat(auto-fill, minmax(128px, 1fr))",
+				gap: "10px",
+				paddingRight: "6px",
+				minHeight: "0",
+				alignContent: "start"
+			},
+			wallCard: {
+				border: `1px solid ${BORDER}`,
+				background: SURFACE,
+				borderRadius: "10px",
+				overflow: "hidden",
+				cursor: "pointer",
+				transition: "border-color .15s ease"
+			},
+			wallActive: { borderColor: ACCENT },
+			wallPreview: {
+				height: "88px",
+				backgroundSize: "cover",
+				backgroundPosition: "center"
+			},
+			wallName: {
+				padding: "6px 10px",
+				fontSize: "12px",
+				color: TEXT
+			},
 			card: {
 				border: `1px solid ${BORDER}`,
 				background: SURFACE,
@@ -391,10 +836,10 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.5.6";
+		const ARMORY_VERSION = "0.7.0";
 		/** Render the Prompt-SkillArmory management page. */
 		function SwitchbladeSection(props) {
-			const { useSwitchblade, t, load, setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt, installSkill, updateSkill, setSkillEnabled, uninstallSkill, addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer } = props;
+			const { useSwitchblade, t, load, setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt, installSkill, updateSkill, setSkillEnabled, uninstallSkill, addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer, testMcpServer } = props;
 			const state = useSwitchblade((snapshot) => snapshot);
 			const [promptName, setPromptName] = (0, react.useState)("");
 			const [promptDesc, setPromptDesc] = (0, react.useState)("");
@@ -414,7 +859,9 @@ window.__ModuleLoader__.load({
 			const [mcpTransport, setMcpTransport] = (0, react.useState)("stdio");
 			const [mcpCommand, setMcpCommand] = (0, react.useState)("");
 			const [mcpArgs, setMcpArgs] = (0, react.useState)("");
+			const [mcpEnv, setMcpEnv] = (0, react.useState)("");
 			const [mcpUrl, setMcpUrl] = (0, react.useState)("");
+			const [mcpHeaders, setMcpHeaders] = (0, react.useState)("");
 			const [editingMcpName, setEditingMcpName] = (0, react.useState)();
 			(0, react.useEffect)(() => {
 				load();
@@ -424,6 +871,18 @@ window.__ModuleLoader__.load({
 			};
 			const setDefault = (id) => {
 				setDefaultPreset(id);
+			};
+			/** Parse newline-separated `KEY=VALUE` lines into a record. */
+			const parseKv = (text) => {
+				const out = {};
+				for (const line of text.split("\n")) {
+					const idx = line.indexOf("=");
+					if (idx <= 0) continue;
+					const key = line.slice(0, idx).trim();
+					const value = line.slice(idx + 1).trim();
+					if (key !== "") out[key] = value;
+				}
+				return out;
 			};
 			/** Submit the MCP server form (add or update). */
 			const submitMcpServer = () => {
@@ -437,17 +896,21 @@ window.__ModuleLoader__.load({
 				const config = mcpTransport === "stdio" ? {
 					...base,
 					command: mcpCommand.trim(),
-					args: mcpArgs.trim() ? mcpArgs.trim().split(/\s+/) : []
+					args: mcpArgs.trim() ? mcpArgs.trim().split(/\s+/) : [],
+					env: parseKv(mcpEnv)
 				} : {
 					...base,
-					url: mcpUrl.trim()
+					url: mcpUrl.trim(),
+					headers: parseKv(mcpHeaders)
 				};
 				(editingMcpName !== void 0 ? updateMcpServer(editingMcpName, config) : addMcpServer(config)).catch((error) => console.error("[switchblade] mcp save failed", error)).finally(() => {
 					setBusy(false);
 					setMcpName("");
 					setMcpCommand("");
 					setMcpArgs("");
+					setMcpEnv("");
 					setMcpUrl("");
+					setMcpHeaders("");
 					setEditingMcpName(void 0);
 				});
 			};
@@ -458,8 +921,69 @@ window.__ModuleLoader__.load({
 				setMcpTransport(server.transport);
 				setMcpCommand(server.command ?? "");
 				setMcpArgs((server.args ?? []).join(" "));
+				setMcpEnv(Object.entries(server.env ?? {}).map(([k, v]) => `${k}=${v}`).join("\n"));
 				setMcpUrl(server.url ?? "");
+				setMcpHeaders(Object.entries(server.headers ?? {}).map(([k, v]) => `${k}=${v}`).join("\n"));
 			};
+			const [bgDraft, setBgDraft] = (0, react.useState)(DEFAULT_BACKGROUND);
+			(0, react.useEffect)(() => {
+				const snap = backgroundClient.getSnapshot();
+				if (snap.status === "ready") {
+					setBgDraft({ ...snap.value });
+					applyBackground(snap.value);
+				}
+			}, []);
+			const resetBackground = () => {
+				const d = { ...DEFAULT_BACKGROUND };
+				setBgDraft(d);
+				applyBackground(d);
+				backgroundClient.save(d);
+			};
+			const updateBgLive = (patch) => {
+				setBgDraft((prev) => {
+					const next = {
+						...prev,
+						...patch
+					};
+					applyBackground(next);
+					backgroundClient.save(next);
+					return next;
+				});
+			};
+			const bgSlider = (label, key, min, max, step) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				style: {
+					display: "flex",
+					alignItems: "center",
+					gap: "8px"
+				},
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						style: {
+							...CSS.hint,
+							width: "76px",
+							flex: "none"
+						},
+						children: label
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						type: "range",
+						min,
+						max,
+						step,
+						value: bgDraft[key],
+						onChange: (e) => updateBgLive({ [key]: Number(e.target.value) }),
+						style: { flex: 1 }
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						style: {
+							...CSS.hint,
+							width: "34px",
+							textAlign: "right"
+						},
+						children: Math.round(bgDraft[key] * 100)
+					})
+				]
+			});
 			/** Read a local skill .md file into the import form. */
 			const onSkillFile = (file) => {
 				if (file === void 0) return;
@@ -664,6 +1188,26 @@ window.__ModuleLoader__.load({
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 								style: {
 									...CSS.tab,
+									...activeTab === "mcp" ? CSS.tabActive : {}
+								},
+								onClick: () => setActiveTab("mcp"),
+								children: [
+									"MCP (",
+									state.status === "loading" ? "…" : state.mcpServers.length,
+									")"
+								]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								style: {
+									...CSS.tab,
+									...activeTab === "wallpaper" ? CSS.tabActive : {}
+								},
+								onClick: () => setActiveTab("wallpaper"),
+								children: "Wallpaper"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+								style: {
+									...CSS.tab,
 									...activeTab === "presets" ? CSS.tabActive : {}
 								},
 								onClick: () => setActiveTab("presets"),
@@ -671,18 +1215,6 @@ window.__ModuleLoader__.load({
 									t("agentPresetsTitle"),
 									" (",
 									state.status === "loading" ? "…" : presetRows.length,
-									")"
-								]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-								style: {
-									...CSS.tab,
-									...activeTab === "mcp" ? CSS.tabActive : {}
-								},
-								onClick: () => setActiveTab("mcp"),
-								children: [
-									"MCP (",
-									state.status === "loading" ? "…" : state.mcpServers.length,
 									")"
 								]
 							})
@@ -1004,22 +1536,36 @@ window.__ModuleLoader__.load({
 											children: "HTTP"
 										})]
 									}),
-									mcpTransport === "stdio" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										style: CSS.input,
-										placeholder: "命令 (command, 如 npx)",
-										value: mcpCommand,
-										onChange: (e) => setMcpCommand(e.target.value)
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										style: CSS.input,
-										placeholder: "参数 (args, 空格分隔)",
-										value: mcpArgs,
-										onChange: (e) => setMcpArgs(e.target.value)
-									})] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									mcpTransport === "stdio" ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											style: CSS.input,
+											placeholder: "命令 (command, 如 npx)",
+											value: mcpCommand,
+											onChange: (e) => setMcpCommand(e.target.value)
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											style: CSS.input,
+											placeholder: "参数 (args, 空格分隔)",
+											value: mcpArgs,
+											onChange: (e) => setMcpArgs(e.target.value)
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+											style: CSS.textarea,
+											placeholder: "环境变量 (env, 每行 KEY=VALUE)",
+											value: mcpEnv,
+											onChange: (e) => setMcpEnv(e.target.value)
+										})
+									] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 										style: CSS.input,
 										placeholder: "URL (如 http://localhost:3000/mcp)",
 										value: mcpUrl,
 										onChange: (e) => setMcpUrl(e.target.value)
-									}),
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+										style: CSS.textarea,
+										placeholder: "请求头 (headers, 每行 KEY=VALUE)",
+										value: mcpHeaders,
+										onChange: (e) => setMcpHeaders(e.target.value)
+									})] }),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										style: CSS.actions,
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
@@ -1034,7 +1580,9 @@ window.__ModuleLoader__.load({
 												setMcpName("");
 												setMcpCommand("");
 												setMcpArgs("");
+												setMcpEnv("");
 												setMcpUrl("");
+												setMcpHeaders("");
 											},
 											children: "取消"
 										})]
@@ -1063,7 +1611,36 @@ window.__ModuleLoader__.load({
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											style: CSS.desc,
-											children: [server.transport, server.transport === "stdio" ? ` · ${server.command ?? ""}` : ` · ${server.url ?? ""}`]
+											children: [
+												server.transport,
+												server.transport === "stdio" ? ` · ${server.command ?? ""}` : ` · ${server.url ?? ""}`,
+												" · ",
+												server.running ? `运行中 (${server.tools?.length ?? 0} 工具)` : "未运行"
+											]
+										}),
+										server.lastError !== void 0 && server.lastError !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: {
+												...CSS.error,
+												marginTop: "4px"
+											},
+											children: ["✖ ", server.lastError]
+										}),
+										(server.tools?.length ?? 0) > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+											style: {
+												marginTop: "6px",
+												display: "flex",
+												flexDirection: "column",
+												gap: "2px"
+											},
+											children: server.tools.map((tool) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+												style: {
+													fontSize: "11px",
+													color: ACCENT,
+													fontFamily: MONO,
+													wordBreak: "break-all"
+												},
+												children: tool.name
+											}, tool.name))
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											style: CSS.actions,
@@ -1072,6 +1649,11 @@ window.__ModuleLoader__.load({
 													style: CSS.actionBtn,
 													onClick: () => toggleMcpServer(server.serverName, !server.enabled),
 													children: server.enabled ? "停用" : "启用"
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													style: CSS.actionBtn,
+													onClick: () => testMcpServer(server.serverName),
+													children: "测试"
 												}),
 												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 													style: CSS.actionBtn,
@@ -1090,7 +1672,362 @@ window.__ModuleLoader__.load({
 										})
 									]
 								}, server.serverName))
-							})] })
+							})] }),
+							activeTab === "wallpaper" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(react_jsx_runtime.Fragment, { children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: CSS.form,
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											alignItems: "center",
+											justifyContent: "space-between"
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: {
+												fontSize: "13px",
+												fontWeight: 600,
+												color: isDesktopSurface ? "#7ee787" : "#79c0ff"
+											},
+											children: isDesktopSurface ? "桌面客户端 · 全局壁纸" : "网页 · 全局壁纸"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											style: {
+												...CSS.actionBtn,
+												...CSS.dangerBtn
+											},
+											onClick: resetBackground,
+											children: "重置"
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										onClick: () => {
+											const d = {
+												...bgDraft,
+												enabled: !bgDraft.enabled
+											};
+											setBgDraft(d);
+											applyBackground(d);
+											backgroundClient.save(d);
+										},
+										role: "switch",
+										"aria-checked": bgDraft.enabled,
+										style: {
+											display: "flex",
+											alignItems: "center",
+											gap: "10px",
+											cursor: "pointer",
+											padding: "10px 12px",
+											borderRadius: "8px",
+											border: `1px solid ${bgDraft.enabled ? "#238636" : "#30363d"}`,
+											background: bgDraft.enabled ? "rgba(35,134,54,0.22)" : "#161b22"
+										},
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												style: {
+													fontSize: "13px",
+													fontWeight: 600,
+													color: bgDraft.enabled ? "#7ee787" : "#8b949e"
+												},
+												children: "启用壁纸"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: { flex: 1 } }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												style: {
+													width: "40px",
+													height: "22px",
+													borderRadius: "999px",
+													background: bgDraft.enabled ? "#3fb950" : "#30363d",
+													position: "relative",
+													flex: "none",
+													transition: "background .15s ease"
+												},
+												children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: {
+													position: "absolute",
+													top: "2px",
+													left: bgDraft.enabled ? 20 : 2,
+													width: "18px",
+													height: "18px",
+													borderRadius: "50%",
+													background: "#fff",
+													transition: "left .15s ease"
+												} })
+											})
+										]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+										style: CSS.fileBtn,
+										children: ["🖼 上传本地壁纸（图片 / 视频，存盘不撑爆配置）", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											type: "file",
+											accept: "image/*,video/*",
+											style: { display: "none" },
+											onChange: async (e) => {
+												const f = e.target.files?.[0];
+												if (f === void 0) return;
+												const up = await uploadMedia(f);
+												if (up !== null) {
+													const d = {
+														...bgDraft,
+														uploadId: up.id,
+														kind: up.kind,
+														url: ""
+													};
+													setBgDraft(d);
+													applyBackground(d);
+													backgroundClient.save(d);
+												}
+												e.target.value = "";
+											}
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										style: CSS.input,
+										placeholder: "图片 URL（https://…，留空则无壁纸）",
+										value: bgDraft.url,
+										onChange: (e) => setBgDraft({
+											...bgDraft,
+											url: e.target.value
+										}),
+										onBlur: () => {
+											if (bgDraft.url.trim() !== "") {
+												applyBackground(bgDraft);
+												backgroundClient.save(bgDraft);
+											}
+										},
+										onKeyDown: (e) => {
+											if (e.key === "Enter" && bgDraft.url.trim() !== "") {
+												applyBackground(bgDraft);
+												backgroundClient.save(bgDraft);
+											}
+										}
+									}),
+									(bgDraft.uploadId !== "" || bgDraft.url.trim() !== "") && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											alignItems: "center",
+											gap: "8px",
+											fontSize: "12px",
+											color: "#58a6ff"
+										},
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
+												"已选择：",
+												bgDraft.kind === "video" ? "🎬 视频" : "🖼 图片",
+												bgDraft.uploadId !== "" ? "（本地上传）" : "（链接）"
+											] }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { style: { flex: 1 } }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												style: {
+													...CSS.actionBtn,
+													...CSS.dangerBtn
+												},
+												onClick: () => {
+													const d = {
+														...bgDraft,
+														uploadId: "",
+														url: ""
+													};
+													setBgDraft(d);
+													applyBackground(d);
+													backgroundClient.save(d);
+												},
+												children: "清除"
+											})
+										]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											alignItems: "center",
+											gap: "8px",
+											marginTop: "2px"
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: {
+												fontSize: "12px",
+												fontWeight: 600,
+												color: "#e6edf3"
+											},
+											children: "样式"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
+											flex: 1,
+											height: "1px",
+											background: "#30363d"
+										} })]
+									}),
+									bgSlider("图片透明度", "opacity", 0, 1, .05),
+									bgSlider("遮罩", "scrim", 0, 1, .05),
+									bgSlider("面板透明度", "panelOpacity", 0, 1, .05),
+									bgSlider("玻璃模糊", "blur", 0, 40, 1),
+									bgSlider("壁纸模糊", "wallpaperBlur", 0, 40, 1),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											gap: "8px",
+											alignItems: "center"
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: {
+												...CSS.hint,
+												width: "76px",
+												flex: "none"
+											},
+											children: "铺法"
+										}), ["cover", "contain"].map((f) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											style: {
+												...CSS.actionBtn,
+												...bgDraft.fit === f ? CSS.tabActive : {}
+											},
+											onClick: () => updateBgLive({ fit: f }),
+											children: f === "cover" ? "铺满" : "适应"
+										}, f))]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											alignItems: "center",
+											gap: "8px",
+											marginTop: "4px"
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: {
+												fontSize: "12px",
+												fontWeight: 600,
+												color: "#e6edf3"
+											},
+											children: "输入框下方提示样式"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { style: {
+											flex: 1,
+											height: "1px",
+											background: "#30363d"
+										} })]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											gap: "8px",
+											alignItems: "center"
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: {
+												...CSS.hint,
+												width: "76px",
+												flex: "none"
+											},
+											children: "启用"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											style: {
+												...CSS.actionBtn,
+												...bgDraft.hint.enabled ? CSS.badgeEnabled : {}
+											},
+											onClick: () => updateBgLive({ hint: {
+												...bgDraft.hint,
+												enabled: !bgDraft.hint.enabled
+											} }),
+											children: bgDraft.hint.enabled ? "已启用" : "已停用"
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											gap: "8px",
+											alignItems: "center"
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: {
+												...CSS.hint,
+												width: "76px",
+												flex: "none"
+											},
+											children: "颜色"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											type: "color",
+											value: bgDraft.hint.color,
+											onChange: (e) => updateBgLive({ hint: {
+												...bgDraft.hint,
+												color: e.target.value
+											} }),
+											style: {
+												flex: "none",
+												width: "34px",
+												height: "26px",
+												border: "none",
+												background: "transparent",
+												padding: 0
+											}
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											gap: "8px",
+											alignItems: "center"
+										},
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												style: {
+													...CSS.hint,
+													width: "76px",
+													flex: "none"
+												},
+												children: "字号"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+												type: "range",
+												min: 10,
+												max: 16,
+												step: 1,
+												value: bgDraft.hint.size,
+												onChange: (e) => updateBgLive({ hint: {
+													...bgDraft.hint,
+													size: Number(e.target.value)
+												} }),
+												style: { flex: 1 }
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+												style: {
+													...CSS.hint,
+													width: "30px",
+													textAlign: "right"
+												},
+												children: [bgDraft.hint.size, "px"]
+											})
+										]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											gap: "6px",
+											alignItems: "center",
+											flexWrap: "wrap"
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: {
+												...CSS.hint,
+												width: "76px",
+												flex: "none"
+											},
+											children: "渐变色"
+										}), GRADIENTS.map((g) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											title: g.name,
+											style: {
+												...CSS.actionBtn,
+												...bgDraft.hint.gradient === g.id ? CSS.tabActive : {},
+												...g.css !== "" ? {
+													backgroundImage: g.css,
+													color: "transparent",
+													backgroundClip: "text",
+													WebkitBackgroundClip: "text",
+													fontWeight: 700
+												} : {}
+											},
+											onClick: () => updateBgLive({ hint: {
+												...bgDraft.hint,
+												gradient: g.id
+											} }),
+											children: g.name
+										}, g.id))]
+									})
+								]
+							}) })
 						]
 					})
 				]
@@ -1112,11 +2049,6 @@ window.__ModuleLoader__.load({
 		function messageOf(error) {
 			return error instanceof Error ? error.message : String(error);
 		}
-		/**
-		* Data controller bound to one session's connection.
-		* @param api - the connection's API client.
-		* @param sessionId - session the skill catalog resolves against.
-		*/
 		var SwitchbladeSectionController = class {
 			api;
 			sessionId;
@@ -1164,16 +2096,24 @@ window.__ModuleLoader__.load({
 						content: s.content ?? "",
 						enabled: s.enabled ?? true
 					})) : [];
-					const mcpServers = Array.isArray(switchbladeSection?.mcpServers) ? switchbladeSection.mcpServers.map((s) => ({
-						serverName: s.serverName,
-						transport: s.transport,
-						...s.command === void 0 ? {} : { command: s.command },
-						...s.args === void 0 ? {} : { args: s.args },
-						...s.env === void 0 ? {} : { env: s.env },
-						...s.url === void 0 ? {} : { url: s.url },
-						...s.headers === void 0 ? {} : { headers: s.headers },
-						enabled: s.enabled ?? true
-					})) : [];
+					const mcpServers = Array.isArray(switchbladeSection?.mcpServers) ? switchbladeSection.mcpServers.map((s) => {
+						const status = (switchbladeSection?.mcpStatus)?.[s.serverName];
+						return {
+							serverName: s.serverName,
+							transport: s.transport,
+							...s.command === void 0 ? {} : { command: s.command },
+							...s.args === void 0 ? {} : { args: s.args },
+							...s.env === void 0 ? {} : { env: s.env },
+							...s.url === void 0 ? {} : { url: s.url },
+							...s.headers === void 0 ? {} : { headers: s.headers },
+							enabled: s.enabled ?? true,
+							...status === void 0 ? {} : {
+								running: status.running ?? false,
+								tools: status.tools ?? [],
+								...status.lastError === void 0 ? {} : { lastError: status.lastError }
+							}
+						};
+					}) : [];
 					this.store.set({
 						status: "ready",
 						skills,
@@ -1407,6 +2347,27 @@ window.__ModuleLoader__.load({
 				const next = this.currentMcpServers().filter((s) => s.serverName !== name);
 				await this.writeMcpServers(next);
 			}
+			/**
+			* Ask the Host to (re)start one server and republish its live status. The
+			* Host processes the one-shot request and updates mcpStatus; we refresh
+			* after a short delay so the panel shows the fresh tool list / error.
+			*/
+			async testMcpServer(name) {
+				const res = await this.api.settings.mutate({
+					ns: "switchblade",
+					ops: [{
+						op: "set",
+						path: ["mcpTestRequest"],
+						value: {
+							serverName: name,
+							ts: Date.now()
+						}
+					}]
+				});
+				if (!res.result.ok) throw new Error(res.result.error.message);
+				await new Promise((r) => setTimeout(r, 2e3));
+				await this.load();
+			}
 			/** Persist the MCP server config list. */
 			async writeMcpServers(servers) {
 				const res = await this.api.settings.mutate({
@@ -1445,6 +2406,23 @@ window.__ModuleLoader__.load({
 			}), "ui-switchblade: dictionaries");
 			const api = ctx.get("connection").api;
 			const sessions = ctx.get("sessions");
+			applyHintStyle();
+			try {
+				initBackgroundClient(api);
+				const paintBackground = () => {
+					const s = backgroundClient.getSnapshot();
+					if (s.status === "ready") applyBackground(s.value);
+				};
+				backgroundClient.subscribe(paintBackground);
+				const applyPersisted = () => {
+					backgroundClient.load().then((ok) => {
+						if (!ok) setTimeout(applyPersisted, 1200);
+					});
+				};
+				applyPersisted();
+			} catch (error) {
+				console.warn("[switchblade] background init skipped:", error);
+			}
 			const controller = new SwitchbladeSectionController(api, () => {
 				const state = sessions.list.getSnapshot();
 				return state.current === void 0 ? void 0 : state.current;
@@ -1472,7 +2450,8 @@ window.__ModuleLoader__.load({
 					addMcpServer: (config) => controller.addMcpServer(config),
 					updateMcpServer: (name, patch) => controller.updateMcpServer(name, patch),
 					toggleMcpServer: (name, enabled) => controller.toggleMcpServer(name, enabled),
-					removeMcpServer: (name) => controller.removeMcpServer(name)
+					removeMcpServer: (name) => controller.removeMcpServer(name),
+					testMcpServer: (name) => controller.testMcpServer(name)
 				})
 			}, SwitchbladeSection));
 		}

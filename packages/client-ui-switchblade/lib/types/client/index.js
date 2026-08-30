@@ -4,11 +4,11 @@
  * state. Global scope (root) — one management seat for every session.
  * @module @deepseek-ai/dsh-client-ui-switchblade
  */
-import { en, NS, zh } from "./locales.js";
-import { SwitchbladeSection } from "./SwitchbladeSection.js";
-import { SwitchbladeSectionController } from "./store.js";
-export { SwitchbladeSection } from "./SwitchbladeSection.js";
-export { SwitchbladeSectionController } from "./store.js";
+import { en, NS, zh } from './locales.ts';
+import { SwitchbladeSection } from './SwitchbladeSection.tsx';
+import { SwitchbladeSectionController } from './store.ts';
+export { SwitchbladeSection } from './SwitchbladeSection.tsx';
+export { SwitchbladeSectionController } from './store.ts';
 /** Required services (cordis fiber inject). */
 export const inject = ['slots', 'locale', 'connection', 'sessions'];
 /**
@@ -48,4 +48,3 @@ export function apply(ctx) {
 }
 /** Cordis plugin identity. */
 export const name = 'ui-switchblade';
-//# sourceMappingURL=index.js.map

@@ -25,4 +25,3 @@ export declare const inject: string[];
 export declare function apply(ctx: ClientContext): void;
 /** Cordis plugin identity. */
 export declare const name = "ui-switchblade";
-//# sourceMappingURL=index.d.ts.map

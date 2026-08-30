@@ -1,6 +1,6 @@
 {
   "name": "prompt-skill-armory",
-  "version": "0.5.6",
+  "version": "0.7.0",
   "description": "One-command installer for Prompt-SkillArmory (prompts + skills manager) into the DeepSeek Harness (web + desktop)",
   "type": "module",
   "bin": {

@@ -14,6 +14,7 @@ import type { CSSProperties, JSX } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SwitchbladeKey } from './locales.ts'
 import type { McpServerRow, SwitchbladeSectionInjected, SwitchbladeSectionState } from './store.ts'
+import { backgroundClient, DEFAULT_BACKGROUND, applyBackground, uploadMedia, isDesktopSurface, GRADIENTS, type BackgroundSettings } from './background.ts'
 
 export type { SwitchbladeSectionInjected } from './store.ts'
 
@@ -203,6 +204,37 @@ const CSS: Record<string, CSSProperties> = {
     paddingRight: '6px',
     minHeight: '0',
   },
+  wallGrid: {
+    flex: 1,
+    overflowY: 'auto' as const,
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(128px, 1fr))',
+    gap: '10px',
+    paddingRight: '6px',
+    minHeight: '0',
+    alignContent: 'start' as const,
+  },
+  wallCard: {
+    border: `1px solid ${BORDER}`,
+    background: SURFACE,
+    borderRadius: '10px',
+    overflow: 'hidden',
+    cursor: 'pointer',
+    transition: 'border-color .15s ease',
+  },
+  wallActive: {
+    borderColor: ACCENT,
+  },
+  wallPreview: {
+    height: '88px',
+    backgroundSize: 'cover' as const,
+    backgroundPosition: 'center' as const,
+  },
+  wallName: {
+    padding: '6px 10px',
+    fontSize: '12px',
+    color: TEXT,
+  },
   card: {
     border: `1px solid ${BORDER}`,
     background: SURFACE,
@@ -295,10 +327,10 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
   )
 }
 
-type TabKey = 'prompts' | 'skills' | 'presets' | 'mcp'
+type TabKey = 'prompts' | 'skills' | 'mcp' | 'presets' | 'wallpaper'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.5.6'
+const ARMORY_VERSION = '0.7.0'
 
 /** Render the Prompt-SkillArmory management page. */
 export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element {
@@ -306,7 +338,7 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     useSwitchblade, t, load,
     setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt,
     installSkill, updateSkill, setSkillEnabled, uninstallSkill,
-    addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer,
+    addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer, testMcpServer,
   } = props
   const state = useSwitchblade((snapshot: SwitchbladeSectionState) => snapshot)
   const [promptName, setPromptName] = useState('')
@@ -328,7 +360,9 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
   const [mcpTransport, setMcpTransport] = useState<'stdio' | 'streamable-http'>('stdio')
   const [mcpCommand, setMcpCommand] = useState('')
   const [mcpArgs, setMcpArgs] = useState('')
+  const [mcpEnv, setMcpEnv] = useState('')
   const [mcpUrl, setMcpUrl] = useState('')
+  const [mcpHeaders, setMcpHeaders] = useState('')
   const [editingMcpName, setEditingMcpName] = useState<string | undefined>()
 
   useEffect(() => {
@@ -343,14 +377,32 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     void setDefaultPreset(id)
   }
 
+  /** Parse newline-separated `KEY=VALUE` lines into a record. */
+  const parseKv = (text: string): Record<string, string> => {
+    const out: Record<string, string> = {}
+    for (const line of text.split('\n')) {
+      const idx = line.indexOf('=')
+      if (idx <= 0) continue
+      const key = line.slice(0, idx).trim()
+      const value = line.slice(idx + 1).trim()
+      if (key !== '') out[key] = value
+    }
+    return out
+  }
+
   /** Submit the MCP server form (add or update). */
   const submitMcpServer = (): void => {
     if (mcpName.trim() === '') return
     setBusy(true)
     const base = { serverName: mcpName.trim(), transport: mcpTransport, enabled: true }
     const config = mcpTransport === 'stdio'
-      ? { ...base, command: mcpCommand.trim(), args: mcpArgs.trim() ? mcpArgs.trim().split(/\s+/) : [] }
-      : { ...base, url: mcpUrl.trim() }
+      ? {
+          ...base,
+          command: mcpCommand.trim(),
+          args: mcpArgs.trim() ? mcpArgs.trim().split(/\s+/) : [],
+          env: parseKv(mcpEnv),
+        }
+      : { ...base, url: mcpUrl.trim(), headers: parseKv(mcpHeaders) }
     const action = editingMcpName !== undefined
       ? updateMcpServer(editingMcpName, config)
       : addMcpServer(config)
@@ -358,7 +410,7 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
       .catch((error: unknown) => console.error('[switchblade] mcp save failed', error))
       .finally(() => {
         setBusy(false)
-        setMcpName(''); setMcpCommand(''); setMcpArgs(''); setMcpUrl('')
+        setMcpName(''); setMcpCommand(''); setMcpArgs(''); setMcpEnv(''); setMcpUrl(''); setMcpHeaders('')
         setEditingMcpName(undefined)
       })
   }
@@ -370,8 +422,48 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     setMcpTransport(server.transport)
     setMcpCommand(server.command ?? '')
     setMcpArgs((server.args ?? []).join(' '))
+    setMcpEnv(Object.entries(server.env ?? {}).map(([k, v]) => `${k}=${v}`).join('\n'))
     setMcpUrl(server.url ?? '')
+    setMcpHeaders(Object.entries(server.headers ?? {}).map(([k, v]) => `${k}=${v}`).join('\n'))
   }
+
+  // Background / effects draft + handlers (persisted via backgroundClient
+  // route; live preview through applyBackground / applyBackgroundKnob).
+  const [bgDraft, setBgDraft] = useState<BackgroundSettings>(DEFAULT_BACKGROUND)
+
+  useEffect(() => {
+    const snap = backgroundClient.getSnapshot()
+    if (snap.status === 'ready') {
+      setBgDraft({ ...snap.value })
+      applyBackground(snap.value)
+    }
+  }, [])
+
+  const saveBackground = (draft: BackgroundSettings): void => {
+    void backgroundClient.save(draft)
+  }
+  const resetBackground = (): void => {
+    const d = { ...DEFAULT_BACKGROUND }
+    setBgDraft(d); applyBackground(d); void backgroundClient.save(d)
+  }
+  const updateBgLive = (patch: Partial<BackgroundSettings>): void => {
+    setBgDraft((prev) => {
+      const next = { ...prev, ...patch }
+      applyBackground(next)
+      void backgroundClient.save(next)
+      return next
+    })
+  }
+  const bgSlider = (label: string, key: 'opacity' | 'scrim' | 'panelOpacity' | 'blur' | 'wallpaperBlur', min: number, max: number, step: number): JSX.Element => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <span style={{ ...CSS.hint, width: '76px', flex: 'none' }}>{label}</span>
+      <input type="range" min={min} max={max} step={step}
+        value={bgDraft[key] as number}
+        onChange={(e) => updateBgLive({ [key]: Number(e.target.value) } as Partial<BackgroundSettings>)}
+        style={{ flex: 1 }} />
+      <span style={{ ...CSS.hint, width: '34px', textAlign: 'right' as const }}>{Math.round((bgDraft[key] as number) * 100)}</span>
+    </div>
+  )
 
   /** Read a local skill .md file into the import form. */
   const onSkillFile = (file: File | undefined): void => {
@@ -521,11 +613,14 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
         <button style={{ ...CSS.tab, ...(activeTab === 'skills' ? CSS.tabActive : {}) }} onClick={() => setActiveTab('skills')}>
           {t('installSkill')} ({state.status === 'loading' ? '…' : allSkillRows.length})
         </button>
-        <button style={{ ...CSS.tab, ...(activeTab === 'presets' ? CSS.tabActive : {}) }} onClick={() => setActiveTab('presets')}>
-          {t('agentPresetsTitle')} ({state.status === 'loading' ? '…' : presetRows.length})
-        </button>
         <button style={{ ...CSS.tab, ...(activeTab === 'mcp' ? CSS.tabActive : {}) }} onClick={() => setActiveTab('mcp')}>
           MCP ({state.status === 'loading' ? '…' : state.mcpServers.length})
+        </button>
+        <button style={{ ...CSS.tab, ...(activeTab === 'wallpaper' ? CSS.tabActive : {}) }} onClick={() => setActiveTab('wallpaper')}>
+          Wallpaper
+        </button>
+        <button style={{ ...CSS.tab, ...(activeTab === 'presets' ? CSS.tabActive : {}) }} onClick={() => setActiveTab('presets')}>
+          {t('agentPresetsTitle')} ({state.status === 'loading' ? '…' : presetRows.length})
         </button>
       </div>
 
@@ -664,16 +759,20 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
                 <>
                   <input style={CSS.input} placeholder="命令 (command, 如 npx)" value={mcpCommand} onChange={(e) => setMcpCommand(e.target.value)} />
                   <input style={CSS.input} placeholder="参数 (args, 空格分隔)" value={mcpArgs} onChange={(e) => setMcpArgs(e.target.value)} />
+                  <textarea style={CSS.textarea} placeholder="环境变量 (env, 每行 KEY=VALUE)" value={mcpEnv} onChange={(e) => setMcpEnv(e.target.value)} />
                 </>
               ) : (
-                <input style={CSS.input} placeholder="URL (如 http://localhost:3000/mcp)" value={mcpUrl} onChange={(e) => setMcpUrl(e.target.value)} />
+                <>
+                  <input style={CSS.input} placeholder="URL (如 http://localhost:3000/mcp)" value={mcpUrl} onChange={(e) => setMcpUrl(e.target.value)} />
+                  <textarea style={CSS.textarea} placeholder="请求头 (headers, 每行 KEY=VALUE)" value={mcpHeaders} onChange={(e) => setMcpHeaders(e.target.value)} />
+                </>
               )}
               <div style={CSS.actions}>
                 <button style={CSS.actionBtn} disabled={busy} onClick={submitMcpServer}>
                   {editingMcpName !== undefined ? '保存' : '添加'}
                 </button>
                 {editingMcpName !== undefined && (
-                  <button style={CSS.actionBtn} onClick={() => { setEditingMcpName(undefined); setMcpName(''); setMcpCommand(''); setMcpArgs(''); setMcpUrl('') }}>取消</button>
+                  <button style={CSS.actionBtn} onClick={() => { setEditingMcpName(undefined); setMcpName(''); setMcpCommand(''); setMcpArgs(''); setMcpEnv(''); setMcpUrl(''); setMcpHeaders('') }}>取消</button>
                 )}
               </div>
             </div>
@@ -688,16 +787,124 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
                         {server.enabled ? '启用' : '停用'}
                       </span>
                     </div>
-                    <div style={CSS.desc}>{server.transport}{server.transport === 'stdio' ? ` · ${server.command ?? ''}` : ` · ${server.url ?? ''}`}</div>
+                    <div style={CSS.desc}>
+                      {server.transport}{server.transport === 'stdio' ? ` · ${server.command ?? ''}` : ` · ${server.url ?? ''}`}
+                      {' · '}{server.running ? `运行中 (${server.tools?.length ?? 0} 工具)` : '未运行'}
+                    </div>
+                    {server.lastError !== undefined && server.lastError !== '' && (
+                      <div style={{ ...CSS.error, marginTop: '4px' }}>✖ {server.lastError}</div>
+                    )}
+                    {(server.tools?.length ?? 0) > 0 && (
+                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        {server.tools!.map((tool) => (
+                          <div key={tool.name} style={{ fontSize: '11px', color: ACCENT, fontFamily: MONO, wordBreak: 'break-all' as const }}>
+                            {tool.name}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div style={CSS.actions}>
                       <button style={CSS.actionBtn} onClick={() => toggleMcpServer(server.serverName, !server.enabled)}>
                         {server.enabled ? '停用' : '启用'}
                       </button>
+                      <button style={CSS.actionBtn} onClick={() => testMcpServer(server.serverName)}>测试</button>
                       <button style={CSS.actionBtn} onClick={() => startEditMcpServer(server)}>编辑</button>
                       <button style={{ ...CSS.actionBtn, ...CSS.dangerBtn }} onClick={() => removeMcpServer(server.serverName)}>删除</button>
                     </div>
                   </div>
                 ))}
+            </div>
+          </>
+        )}
+
+        {/* ── Tab: global background & effects ──────────────── */}
+        {activeTab === 'wallpaper' && (
+          <>
+            <div style={CSS.form}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: isDesktopSurface ? '#7ee787' : '#79c0ff' }}>
+                  {isDesktopSurface ? '桌面客户端 · 全局壁纸' : '网页 · 全局壁纸'}
+                </span>
+                <button style={{ ...CSS.actionBtn, ...CSS.dangerBtn }} onClick={resetBackground}>重置</button>
+              </div>
+              <div onClick={() => { const d = { ...bgDraft, enabled: !bgDraft.enabled }; setBgDraft(d); applyBackground(d); void backgroundClient.save(d) }}
+                role="switch" aria-checked={bgDraft.enabled}
+                style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '10px 12px', borderRadius: '8px', border: `1px solid ${bgDraft.enabled ? '#238636' : '#30363d'}`, background: bgDraft.enabled ? 'rgba(35,134,54,0.22)' : '#161b22' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: bgDraft.enabled ? '#7ee787' : '#8b949e' }}>启用壁纸</span>
+                <span style={{ flex: 1 }} />
+                <span style={{ width: '40px', height: '22px', borderRadius: '999px', background: bgDraft.enabled ? '#3fb950' : '#30363d', position: 'relative', flex: 'none', transition: 'background .15s ease' }}>
+                  <span style={{ position: 'absolute', top: '2px', left: bgDraft.enabled ? 20 : 2, width: '18px', height: '18px', borderRadius: '50%', background: '#fff', transition: 'left .15s ease' }} />
+                </span>
+              </div>
+
+              <label style={CSS.fileBtn}>
+                🖼 上传本地壁纸（图片 / 视频，存盘不撑爆配置）
+                <input type="file" accept="image/*,video/*" style={{ display: 'none' }} onChange={async (e) => {
+                  const f = e.target.files?.[0]
+                  if (f === undefined) return
+                  const up = await uploadMedia(f)
+                  if (up !== null) { const d = { ...bgDraft, uploadId: up.id, kind: up.kind, url: '' }; setBgDraft(d); applyBackground(d); void backgroundClient.save(d) }
+                  e.target.value = ''
+                }} />
+              </label>
+              <input style={CSS.input} placeholder="图片 URL（https://…，留空则无壁纸）" value={bgDraft.url}
+                onChange={(e) => setBgDraft({ ...bgDraft, url: e.target.value })}
+                onBlur={() => { if (bgDraft.url.trim() !== '') { applyBackground(bgDraft); void backgroundClient.save(bgDraft) } }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && bgDraft.url.trim() !== '') { applyBackground(bgDraft); void backgroundClient.save(bgDraft) } }} />
+
+              {(bgDraft.uploadId !== '' || bgDraft.url.trim() !== '') && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#58a6ff' }}>
+                  <span>已选择：{bgDraft.kind === 'video' ? '🎬 视频' : '🖼 图片'}{bgDraft.uploadId !== '' ? '（本地上传）' : '（链接）'}</span>
+                  <span style={{ flex: 1 }} />
+                  <button style={{ ...CSS.actionBtn, ...CSS.dangerBtn }} onClick={() => { const d = { ...bgDraft, uploadId: '', url: '' }; setBgDraft(d); applyBackground(d); void backgroundClient.save(d) }}>清除</button>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#e6edf3' }}>样式</span>
+                <div style={{ flex: 1, height: '1px', background: '#30363d' }} />
+              </div>
+              {bgSlider('图片透明度', 'opacity', 0, 1, 0.05)}
+              {bgSlider('遮罩', 'scrim', 0, 1, 0.05)}
+              {bgSlider('面板透明度', 'panelOpacity', 0, 1, 0.05)}
+              {bgSlider('玻璃模糊', 'blur', 0, 40, 1)}
+              {bgSlider('壁纸模糊', 'wallpaperBlur', 0, 40, 1)}
+
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span style={{ ...CSS.hint, width: '76px', flex: 'none' }}>铺法</span>
+                {(['cover', 'contain'] as const).map((f) => (
+                  <button key={f} style={{ ...CSS.actionBtn, ...(bgDraft.fit === f ? CSS.tabActive : {}) }}
+                    onClick={() => updateBgLive({ fit: f })}>{f === 'cover' ? '铺满' : '适应'}</button>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#e6edf3' }}>输入框下方提示样式</span>
+                <div style={{ flex: 1, height: '1px', background: '#30363d' }} />
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span style={{ ...CSS.hint, width: '76px', flex: 'none' }}>启用</span>
+                <button style={{ ...CSS.actionBtn, ...(bgDraft.hint.enabled ? CSS.badgeEnabled : {}) }} onClick={() => updateBgLive({ hint: { ...bgDraft.hint, enabled: !bgDraft.hint.enabled } })}>
+                  {bgDraft.hint.enabled ? '已启用' : '已停用'}
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span style={{ ...CSS.hint, width: '76px', flex: 'none' }}>颜色</span>
+                <input type="color" value={bgDraft.hint.color} onChange={(e) => updateBgLive({ hint: { ...bgDraft.hint, color: e.target.value } })} style={{ flex: 'none', width: '34px', height: '26px', border: 'none', background: 'transparent', padding: 0 }} />
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <span style={{ ...CSS.hint, width: '76px', flex: 'none' }}>字号</span>
+                <input type="range" min={10} max={16} step={1} value={bgDraft.hint.size} onChange={(e) => updateBgLive({ hint: { ...bgDraft.hint, size: Number(e.target.value) } })} style={{ flex: 1 }} />
+                <span style={{ ...CSS.hint, width: '30px', textAlign: 'right' as const }}>{bgDraft.hint.size}px</span>
+              </div>
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' as const }}>
+                <span style={{ ...CSS.hint, width: '76px', flex: 'none' }}>渐变色</span>
+                {GRADIENTS.map((g) => (
+                  <button key={g.id} title={g.name}
+                    style={{ ...CSS.actionBtn, ...(bgDraft.hint.gradient === g.id ? CSS.tabActive : {}), ...(g.css !== '' ? { backgroundImage: g.css, color: 'transparent', backgroundClip: 'text', WebkitBackgroundClip: 'text', fontWeight: 700 } : {}) }}
+                    onClick={() => updateBgLive({ hint: { ...bgDraft.hint, gradient: g.id } })}>{g.name}</button>
+                ))}
+              </div>
             </div>
           </>
         )}

@@ -257,4 +257,3 @@ export class SwitchbladeSectionController {
         await this.load();
     }
 }
-//# sourceMappingURL=store.js.map

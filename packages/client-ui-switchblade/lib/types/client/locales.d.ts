@@ -10,4 +10,3 @@ export type SwitchbladeKey = 'nav' | 'skillsTitle' | 'presetsTitle' | 'promptsTi
 export declare const zh: Record<SwitchbladeKey, string>;
 /** en-US copy. */
 export declare const en: Record<SwitchbladeKey, string>;
-//# sourceMappingURL=locales.d.ts.map

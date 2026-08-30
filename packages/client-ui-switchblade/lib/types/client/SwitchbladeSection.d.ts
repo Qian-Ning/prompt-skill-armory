@@ -23,4 +23,3 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export type SwitchbladeSectionProps = PropsRuntime<'settings.section'> & PropsLocale<'settings.switchblade'> & InjectFace<SwitchbladeSectionInjected>;
 /** Render the Prompt-SkillArmory management page. */
 export declare function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element;
-//# sourceMappingURL=SwitchbladeSection.d.ts.map

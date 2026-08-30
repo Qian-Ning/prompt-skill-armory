@@ -17,6 +17,7 @@ import { en, NS, zh, type SwitchbladeKey } from './locales.ts'
 import { SwitchbladeSection } from './SwitchbladeSection.tsx'
 import type { SwitchbladeSectionInjected } from './SwitchbladeSection.tsx'
 import { SwitchbladeSectionController } from './store.ts'
+import { backgroundClient, initBackgroundClient, applyBackground, applyHintStyle } from './background.ts'
 
 export { SwitchbladeSection } from './SwitchbladeSection.tsx'
 export type { SwitchbladeSectionInjected, SwitchbladeSectionProps } from './SwitchbladeSection.tsx'
@@ -42,6 +43,23 @@ export function apply(ctx: ClientContext): void {
 
   const api = (ctx.get('connection') as ConnectionHandle).api
   const sessions = ctx.get('sessions') as ISessions
+
+  // Global background/effects survives restart: the Host persists the section
+  // in its settings document and serves it over a same-origin route; we fetch
+  // it at startup and repaint on every load or change. paint() gates on
+  // status==='ready' so a not-yet-loaded snapshot never clears the backdrop.
+  applyHintStyle()
+  try {
+    initBackgroundClient(api)
+    const paintBackground = (): void => { const s = backgroundClient.getSnapshot(); if (s.status === 'ready') applyBackground(s.value) }
+    backgroundClient.subscribe(paintBackground)
+    const applyPersisted = (): void => { void backgroundClient.load().then((ok) => { if (!ok) setTimeout(applyPersisted, 1200) }) }
+    applyPersisted()
+  } catch (error) {
+    // Never let the background integration take the renderer/plugin tree down.
+    console.warn('[switchblade] background init skipped:', error)
+  }
+
   const controller = new SwitchbladeSectionController(api, () => {
     const state = sessions.list.getSnapshot()
     return state.current === undefined ? undefined : state.current
@@ -71,6 +89,7 @@ export function apply(ctx: ClientContext): void {
       updateMcpServer: (name, patch) => controller.updateMcpServer(name, patch),
       toggleMcpServer: (name, enabled) => controller.toggleMcpServer(name, enabled),
       removeMcpServer: (name) => controller.removeMcpServer(name),
+      testMcpServer: (name) => controller.testMcpServer(name),
     }),
   }, SwitchbladeSection))
 }

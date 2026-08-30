@@ -1,20 +1,217 @@
-import { Service } from "@deepseek-ai/cordis";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
+import { basename, join } from "node:path";
+import { Service } from "@deepseek-ai/cordis";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir } from "node:os";
-import { basename, extname, join } from "node:path";
 import { settingsNamespace } from "@deepseek-ai/dsh-settings";
 import z from "@deepseek-ai/schemastery";
+//#region src/commands.ts
+/**
+* The `/sw` slash-command family.
+*
+* Registered through `ctx.commands.register` (global layer) by the Switchblade
+* service constructor. Each handler runs directly, without a model round-trip,
+* exactly like a CCswitch toggle — the result text is what surfaces.
+*
+* @module @deepseek-ai/dsh-switchblade
+*/
+/** Extract non-empty space-separated tokens from a command's raw input. */
+function tokens(input) {
+	return input.trim().split(/\s+/).filter((token) => token.length > 0);
+}
+/** One result helper: `text` yields a success result, `error` an error one. */
+function ok(text) {
+	return {
+		kind: "success",
+		text
+	};
+}
+function err(text) {
+	return {
+		kind: "error",
+		text
+	};
+}
+/** Render a compact two-column table from normalized entries. */
+function renderRows(rows) {
+	if (rows.length === 0) return "  (empty)";
+	return rows.map((row) => `  [${row.state.padEnd(9)}] ${row.id} — ${row.description}`).join("\n");
+}
+/** Register every `/sw` command against a live Switchblade instance. */
+function defineCommands(ctx, sb) {
+	const commands = [
+		{
+			name: "armory",
+			description: "Switchblade: list installed skills, profiles, and slash commands",
+			handler: async (invocation) => {
+				const catalog = await sb.catalog(invocation.agent);
+				const skills = catalog.entries.filter((row) => row.kind === "skill");
+				const profiles = catalog.entries.filter((row) => row.kind === "profile");
+				const commands = catalog.entries.filter((row) => row.kind === "command");
+				return ok(`skills:\n${renderRows(skills)}\nprofiles${catalog.defaultProfile === void 0 ? "" : ` (default: ${catalog.defaultProfile})`}:\n${renderRows(profiles)}\ncommands:\n${renderRows(commands)}`);
+			}
+		},
+		{
+			name: "armory-enable",
+			description: "Switchblade: enable an installed skill by name",
+			handler: async (invocation) => {
+				const name = tokens(invocation.rawInput)[0];
+				if (name === void 0) return err("/armory-enable <skill-name>");
+				const result = await sb.setSkillEnabled(name, true);
+				return ok(`enabled ${result.id} (${result.state})`);
+			}
+		},
+		{
+			name: "armory-disable",
+			description: "Switchblade: disable an installed skill by name",
+			handler: async (invocation) => {
+				const name = tokens(invocation.rawInput)[0];
+				if (name === void 0) return err("/armory-disable <skill-name>");
+				const result = await sb.setSkillEnabled(name, false);
+				return ok(`disabled ${result.id} (${result.state})`);
+			}
+		},
+		{
+			name: "armory-install",
+			description: "Switchblade: install a local skill (<name>.md) and enable it at once",
+			handler: async (invocation) => {
+				const args = tokens(invocation.rawInput);
+				const name = args[0];
+				if (name === void 0) return err("/armory-install <skill-name>");
+				const source = args[1] ?? name;
+				try {
+					const content = await readFile(join(process.cwd(), ".dsh", "skills", `${source}.md`), "utf8");
+					const result = await sb.installSkill({
+						name,
+						content,
+						description: `installed from ${source}.md`
+					});
+					return ok(`installed ${result.id} (${result.state})`);
+				} catch (error) {
+					return err(`could not install ${name}: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+		},
+		{
+			name: "armory-uninstall",
+			description: "Switchblade: uninstall an owned skill by name",
+			handler: async (invocation) => {
+				const name = tokens(invocation.rawInput)[0];
+				if (name === void 0) return err("/armory-uninstall <skill-name>");
+				const result = await sb.uninstallSkill(name);
+				return ok(`uninstalled ${result.id} (${result.state})`);
+			}
+		},
+		{
+			name: "armory-profile",
+			description: "Switchblade: show or set the default prompt profile",
+			handler: async (invocation) => {
+				const args = tokens(invocation.rawInput);
+				if (args[0] === "default" && args[1] !== void 0) {
+					await sb.setDefaultProfile(args[1]);
+					return ok(`default profile set to ${args[1]}`);
+				}
+				const catalog = await sb.catalog(invocation.agent);
+				return ok(catalog.entries.filter((row) => row.kind === "profile").length === 0 ? "  (no profiles)" : renderRows(catalog.entries.filter((row) => row.kind === "profile")));
+			}
+		},
+		{
+			name: "armory-export",
+			description: "Switchblade: export the managed state as a bundle patch layer",
+			handler: async (_invocation) => {
+				const patch = await sb.exportBundle();
+				const destination = join(process.cwd(), ".dsh", "switchblade.cordis.patch.yml");
+				try {
+					await writeFile(destination, patch, "utf8");
+					return ok(`exported ${destination}`);
+				} catch (error) {
+					return err(`could not write ${destination}: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+		},
+		{
+			name: "armory-import",
+			description: "Switchblade: import switchblade rows from a bundle patch file",
+			handler: async (invocation) => {
+				const path = tokens(invocation.rawInput)[0];
+				if (path === void 0) return err("/armory-import <path-to-cordis.patch.yml>");
+				try {
+					const text = await readFile(path, "utf8");
+					await sb.importBundle(text);
+					return ok(`imported ${path}`);
+				} catch (error) {
+					return err(`could not import ${path}: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+		},
+		{
+			name: "armory-skill-dir",
+			description: "Switchblade: install a skill directory (SKILL.md + references) into ~/.dsh/skills",
+			handler: async (invocation) => {
+				const dir = tokens(invocation.rawInput)[0];
+				if (dir === void 0) return err("/armory-skill-dir <absolute-skill-directory>");
+				try {
+					const name = await sb.installSkillFromDir(dir);
+					return ok(`installed skill "${name}" from ${dir} — now invocable via /${name}`);
+				} catch (error) {
+					return err(`could not install skill dir ${dir}: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+		},
+		{
+			name: "armory-install-zip",
+			description: "Switchblade: install skills from a .zip archive into ~/.dsh/skills",
+			handler: async (invocation) => {
+				const zip = tokens(invocation.rawInput)[0];
+				if (zip === void 0) return err("/armory-install-zip <absolute-path-to-skill.zip>");
+				try {
+					const installed = await sb.installSkillFromZip(zip);
+					if (installed.length === 0) return err("zip contained no entries");
+					return ok(`installed from ${zip}: ${installed.join(", ")} — now invocable via /<name>`);
+				} catch (error) {
+					return err(`could not install zip ${zip}: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			}
+		}
+	];
+	for (const definition of commands) {
+		ctx.commands.register(definition);
+		if (definition.name.startsWith("armory")) {
+			const legacy = definition.name === "armory" ? "sw" : `sw-${definition.name.slice(7)}`;
+			ctx.commands.register({
+				...definition,
+				name: legacy
+			});
+		}
+	}
+}
+//#endregion
 //#region src/invariant.ts
+/** All three managed kinds in canonical order. */
+const MANAGED_KINDS = [
+	"skill",
+	"profile",
+	"command"
+];
 /** Prefix used to namespaced-entry `id`s at the action seam. */
 const ID_PREFIX = {
 	skill: "skill",
 	profile: "profile",
 	command: "command"
 };
+/**
+* Return whether a string looks like a stable Switchblade entry id
+* (`skill:<kebab>`, `profile:<id>`, `command:<name>`).
+* @param value - candidate entry id.
+* @returns whether the id is split into a known kind prefix and a non-empty tail.
+*/
+function isEntryId(value) {
+	const slash = value.indexOf(":");
+	if (slash <= 0 || slash === value.length - 1) return false;
+	const kind = value.slice(0, slash);
+	return MANAGED_KINDS.includes(kind);
+}
 /**
 * Return whether a candidate install name is a safe runtime skill name.
 * @param name - candidate skill name.
@@ -240,102 +437,12 @@ function dequote(raw) {
 const execFileAsync = promisify(execFile);
 /** Switchblade settings namespace name. */
 const SETTINGS_NAMESPACE = "switchblade";
-/** Same-origin background API prefix the browser half fetches on startup. */
-const BACKGROUND_API_PREFIX = "/api/switchblade-wallpaper";
-/** Defaults merged over the stored user section when reading. */
-const DEFAULT_BACKGROUND = {
-	enabled: false,
-	kind: "image",
-	uploadId: "",
-	url: "",
-	opacity: 1,
-	scrim: .25,
-	panelOpacity: 1,
-	blur: 16,
-	wallpaperBlur: 0,
-	fit: "cover"
-};
-/** Plugin-owned media dir under the harness home (bytes live on disk, never in settings). */
-function wallpaperDir() {
-	const dir = join(homedir(), ".dsh", "wallpapers");
-	mkdir(dir, { recursive: true }).catch(() => {});
-	return dir;
-}
-const ACCEPTED_MEDIA = {
-	"image/jpeg": {
-		ext: "jpg",
-		kind: "image"
-	},
-	"image/png": {
-		ext: "png",
-		kind: "image"
-	},
-	"image/webp": {
-		ext: "webp",
-		kind: "image"
-	},
-	"image/gif": {
-		ext: "gif",
-		kind: "image"
-	},
-	"image/svg+xml": {
-		ext: "svg",
-		kind: "image"
-	},
-	"video/mp4": {
-		ext: "mp4",
-		kind: "video"
-	},
-	"video/webm": {
-		ext: "webm",
-		kind: "video"
-	}
-};
-/** JSON helper for route responses. */
-function jsonResponse(res, status, body) {
-	res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
-	res.end(JSON.stringify(body));
-}
-/** Loopback host check for the same-origin fence (see the reference skin plugins). */
-const LOOPBACK_HOSTS = /* @__PURE__ */ new Set([
-	"127.0.0.1",
-	"localhost",
-	"[::1]",
-	"::1"
-]);
-function isLoopbackHost(host) {
-	let bare = host;
-	if (host.startsWith("[")) {
-		const end = host.indexOf("]");
-		if (end !== -1) bare = host.slice(0, end + 1);
-	} else {
-		const colon = host.indexOf(":");
-		if (colon !== -1) bare = host.slice(0, colon);
-	}
-	return LOOPBACK_HOSTS.has(bare) || LOOPBACK_HOSTS.has(host);
-}
-/** Reject cross-site browser requests against the local wallpaper endpoint. */
-function isSameOriginRequest(req) {
-	if (req.headers["sec-fetch-site"] === "cross-site") return false;
-	const host = req.headers.host;
-	if (typeof host !== "string" || !isLoopbackHost(host)) return false;
-	const origin = req.headers.origin;
-	if (typeof origin === "string" && origin !== "" && origin !== "null") try {
-		return new URL(origin).host === host;
-	} catch {
-		return false;
-	}
-	return true;
-}
 /** Runtime schema for the persisted slice. */
 const SwitchbladeSettingsSchema = z.object({
 	installedSkills: z.array(z.any()).default([]),
 	customCommands: z.array(z.any()).default([]),
 	prompts: z.array(z.any()).default([]),
-	mcpServers: z.array(z.any()).default([]),
-	mcpStatus: z.dict(z.any()).default({}),
-	mcpTestRequest: z.any(),
-	background: z.any()
+	mcpServers: z.array(z.any()).default([])
 });
 /** One prompt section id prefix registered on ctx.systemPrompt. */
 const PROMPT_SECTION_PREFIX = "switchblade:prompt:";
@@ -363,10 +470,6 @@ var Switchblade = class extends Service {
 	promptSections = /* @__PURE__ */ new Map();
 	/** Live mcp-client loader entry ids, keyed by serverName. */
 	mcpEntries = /* @__PURE__ */ new Map();
-	/** Last startup/connection error per serverName, surfaced in mcpStatus. */
-	mcpErrors = /* @__PURE__ */ new Map();
-	/** Last processed test-request timestamp per serverName (idempotency guard). */
-	lastTestTs = /* @__PURE__ */ new Map();
 	/** The settings namespace scope; present only while a settings provider is composed. */
 	settingsScope;
 	/** The settings service behind {@link settingsScope}, for path writes. */
@@ -375,7 +478,7 @@ var Switchblade = class extends Service {
 		super(ctx, "switchblade");
 		this.config = config;
 		ctx.logger.warn("[switchblade] Switchblade service constructed");
-		ctx.inject(["settings", "webServer"], (settingsCtx) => {
+		ctx.inject(["settings"], (settingsCtx) => {
 			const scope = settingsCtx.settings.register(settingsNamespace(SETTINGS_NAMESPACE), SwitchbladeSettingsSchema, { base: {} });
 			this.settingsScope = scope;
 			this.settingsService = settingsCtx.settings;
@@ -403,16 +506,6 @@ var Switchblade = class extends Service {
 					} catch (e) {
 						settingsCtx.logger.warn(`[switchblade] mcp reconcile: ${String(e)}`);
 					}
-					try {
-						this.handleMcpTestRequest();
-					} catch (e) {
-						settingsCtx.logger.warn(`[switchblade] mcp test reconcile: ${String(e)}`);
-					}
-					try {
-						this.publishMcpStatus();
-					} catch (e) {
-						settingsCtx.logger.warn(`[switchblade] mcp status reconcile: ${String(e)}`);
-					}
 					reconciling = false;
 				});
 			};
@@ -423,17 +516,6 @@ var Switchblade = class extends Service {
 			}, "switchblade.settings()");
 			settingsCtx.logger.warn(`[switchblade] settings registered; prompts=${scope.get().prompts.length} skills=${scope.get().installedSkills.length}`);
 			this.reinstall(scope.get());
-			try {
-				for (const route of this.wallpaperRoutes()) settingsCtx.effect(() => {
-					try {
-						settingsCtx.webServer.register(route);
-					} catch (e) {
-						settingsCtx.logger.warn(`[switchblade] route failed: ${String(e)}`);
-					}
-				}, "switchblade: bg route");
-			} catch (e) {
-				settingsCtx.logger.warn(`[switchblade] route setup failed: ${String(e)}`);
-			}
 		});
 	}
 	/** All persisted state, merged over schema defaults. */
@@ -441,9 +523,7 @@ var Switchblade = class extends Service {
 		return this.settingsScope?.get() ?? {
 			installedSkills: [],
 			customCommands: [],
-			prompts: [],
-			mcpServers: [],
-			mcpStatus: {}
+			prompts: []
 		};
 	}
 	/** All managed prompts, sorted (default first, then by order). */
@@ -919,135 +999,6 @@ var Switchblade = class extends Service {
 		}
 		if (settings.prompts.length > 0) this.applyPromptRegistrations();
 		for (const server of settings.mcpServers) if (server.enabled) this.startMcpServer(server.serverName);
-		this.publishMcpStatus();
-	}
-	/** Persist the background section through the switchblade settings document. */
-	async writeBackground(section) {
-		await this.settingsService?.mutate(settingsNamespace(SETTINGS_NAMESPACE), [{
-			op: "set",
-			path: ["background"],
-			value: section
-		}]);
-	}
-	/** Read the resolved background section (defaults merged over the user layer). */
-	readBackground() {
-		const raw = this.settings().background;
-		return {
-			...DEFAULT_BACKGROUND,
-			...raw ?? {}
-		};
-	}
-	/**
-	* Same-origin media routes: POST /upload stores a local image/video on disk
-	* (bytes NEVER enter the settings document, so it stays well under the size
-	* cap and survives restarts) and GET /image/<id> serves it back. Mirrors the
-	* reference dsh-background / skin-center pattern.
-	*/
-	wallpaperRoutes() {
-		const readRawBody = (req, limit) => new Promise((resolve, reject) => {
-			const chunks = [];
-			let size = 0;
-			req.on("data", (c) => {
-				size += c.length;
-				if (size > limit) {
-					req.pause();
-					reject(/* @__PURE__ */ new Error("body-too-large"));
-					return;
-				}
-				chunks.push(c);
-			});
-			req.on("end", () => resolve(Buffer.concat(chunks)));
-			req.on("error", reject);
-		});
-		return [{
-			kind: "exact",
-			path: `${BACKGROUND_API_PREFIX}/upload`,
-			handler: async (req, res) => {
-				if (!isSameOriginRequest(req)) {
-					jsonResponse(res, 403, {
-						ok: false,
-						error: "rejected"
-					});
-					return;
-				}
-				if (req.method !== "POST") {
-					jsonResponse(res, 405, {
-						ok: false,
-						error: "method-not-allowed"
-					});
-					return;
-				}
-				const mime = (req.headers["content-type"] ?? "").split(";")[0]?.trim() ?? "";
-				const meta = ACCEPTED_MEDIA[mime];
-				if (meta === void 0) {
-					jsonResponse(res, 400, {
-						ok: false,
-						error: "unsupported-media-type"
-					});
-					return;
-				}
-				try {
-					const body = await readRawBody(req, 60 * 1024 * 1024);
-					if (body.length === 0) {
-						jsonResponse(res, 400, {
-							ok: false,
-							error: "empty-body"
-						});
-						return;
-					}
-					const id = "up-" + randomBytes(12).toString("hex");
-					await writeFile(join(wallpaperDir(), `${id}.${meta.ext}`), body);
-					jsonResponse(res, 200, {
-						ok: true,
-						id,
-						kind: meta.kind,
-						url: `${BACKGROUND_API_PREFIX}/image/${id}`
-					});
-				} catch (error) {
-					jsonResponse(res, 400, {
-						ok: false,
-						error: error instanceof Error ? error.message : String(error)
-					});
-				}
-			}
-		}, {
-			kind: "prefix",
-			path: `${BACKGROUND_API_PREFIX}/image`,
-			handler: async (req, res) => {
-				if (!isSameOriginRequest(req)) {
-					jsonResponse(res, 403, {
-						ok: false,
-						error: "rejected"
-					});
-					return;
-				}
-				if (req.method !== "GET") {
-					jsonResponse(res, 405, { ok: false });
-					return;
-				}
-				const id = (req.url ?? "").slice(`${BACKGROUND_API_PREFIX}/image`.length + 1).replace(/[^a-z0-9.-]/gi, "");
-				if (!/^up-[a-f0-9]{24}/.test(id)) {
-					jsonResponse(res, 404, { ok: false });
-					return;
-				}
-				const dir = join(homedir(), ".dsh", "wallpapers");
-				if (!existsSync(dir)) {
-					jsonResponse(res, 404, { ok: false });
-					return;
-				}
-				const found = Object.values(ACCEPTED_MEDIA).map((m) => join(dir, id.endsWith(m.ext) ? id : `${id}.${m.ext}`)).find((p) => existsSync(p));
-				if (found === void 0) {
-					jsonResponse(res, 404, { ok: false });
-					return;
-				}
-				const mime = extname(found).slice(1) === "mp4" ? "video/mp4" : extname(found).slice(1) === "webm" ? "video/webm" : `image/${extname(found).slice(1).replace("jpg", "jpeg")}`;
-				res.writeHead(200, {
-					"content-type": mime,
-					"cache-control": "public, max-age=31536000, immutable"
-				});
-				res.end(await readFile(found));
-			}
-		}];
 	}
 	/** Reconcile live mcp-client instances against the persisted config list. */
 	reconcileMcpServers() {
@@ -1062,64 +1013,18 @@ var Switchblade = class extends Service {
 	}
 	/** List all configured MCP servers with their runtime status. */
 	async listMcpServers() {
-		return this.settings().mcpServers.map((server) => this.statusOf(server.serverName));
-	}
-	/** Compute the runtime status of one configured server. */
-	statusOf(name) {
-		const server = this.settings().mcpServers.find((s) => s.serverName === name);
-		const running = this.mcpEntries.has(name);
-		const tools = this.listMcpTools().filter((t) => t.name.startsWith(`mcp__${name}__`));
-		const lastError = this.mcpErrors.get(name);
-		return {
-			serverName: name,
-			transport: server?.transport ?? "stdio",
-			enabled: server?.enabled ?? false,
-			running,
-			toolCount: tools.length,
-			tools,
-			...lastError !== void 0 ? { lastError } : {}
-		};
-	}
-	/** Compute the full runtime status map for all configured servers. */
-	computeMcpStatus() {
-		const status = {};
-		for (const server of this.settings().mcpServers) status[server.serverName] = this.statusOf(server.serverName);
-		return status;
-	}
-	/**
-	* Publish the runtime status map into the settings namespace so the Web
-	* panel (which reads settings over the connection RPC, not Typert) can
-	* render per-server tools, running state, and last error. Skips the write
-	* when nothing changed to avoid a settings-watch reconcile loop.
-	*/
-	async publishMcpStatus() {
-		const current = this.settings().mcpStatus ?? {};
-		const next = this.computeMcpStatus();
-		if (JSON.stringify(current) === JSON.stringify(next)) return;
-		await this.settingsService?.mutate(settingsNamespace(SETTINGS_NAMESPACE), [{
-			op: "set",
-			path: ["mcpStatus"],
-			value: next
-		}]);
-	}
-	/**
-	* Process a one-shot test request written by the Web panel. Idempotent per
-	* timestamp: ensures the server is started, waits for tool discovery, then
-	* republishes status so the panel sees the live result.
-	*/
-	handleMcpTestRequest() {
-		const req = this.settings().mcpTestRequest;
-		if (req === void 0) return;
-		const last = this.lastTestTs.get(req.serverName) ?? 0;
-		if (req.ts <= last) return;
-		this.lastTestTs.set(req.serverName, req.ts);
-		this.runMcpTest(req.serverName);
-	}
-	/** Start (if needed) one server, wait for tools, then republish status. */
-	async runMcpTest(name) {
-		if (!this.mcpEntries.has(name)) await this.startMcpServer(name);
-		await new Promise((resolve) => setTimeout(resolve, 1500));
-		await this.publishMcpStatus();
+		const tools = this.listMcpTools();
+		return this.settings().mcpServers.map((server) => {
+			const running = this.mcpEntries.has(server.serverName);
+			const toolCount = tools.filter((t) => t.name.startsWith(`mcp__${server.serverName}__`)).length;
+			return {
+				serverName: server.serverName,
+				transport: server.transport,
+				enabled: server.enabled,
+				running,
+				toolCount
+			};
+		});
 	}
 	/** Add a new MCP server config and start it if enabled. */
 	async addMcpServer(config) {
@@ -1175,10 +1080,8 @@ var Switchblade = class extends Service {
 				}
 			});
 			this.mcpEntries.set(name, id);
-			this.mcpErrors.delete(name);
 			this.ctx.logger.warn(`[switchblade] started MCP server ${name}`);
 		} catch (error) {
-			this.mcpErrors.set(name, String(error));
 			this.ctx.logger.warn(`[switchblade] failed to start MCP server ${name}: ${String(error)}`);
 		}
 	}
@@ -1193,7 +1096,6 @@ var Switchblade = class extends Service {
 			this.ctx.logger.warn(`[switchblade] failed to stop MCP server ${name}: ${String(error)}`);
 		}
 		this.mcpEntries.delete(name);
-		this.mcpErrors.delete(name);
 	}
 	/** List all MCP tools currently registered on ctx.tools. */
 	listMcpTools() {
@@ -1303,4 +1205,21 @@ function passthroughCommand(row) {
 	};
 }
 //#endregion
-export { BACKGROUND_API_PREFIX, SETTINGS_NAMESPACE, Switchblade, Switchblade as default, SwitchbladeSettingsSchema };
+//#region src/index.ts
+/** Cordis plugin identity. */
+const name = "switchblade";
+/** Services this plugin requires; declaring them makes ctx.commands resolvable. */
+const inject = ["commands"];
+/** Mount switchblade and its /sw command family. */
+function apply(ctx) {
+	ctx.logger.warn("[switchblade] apply() invoked — mounting Switchblade service");
+	ctx.plugin(Switchblade).then((fiber) => {
+		ctx.logger.warn("[switchblade] Switchblade service mounted");
+		const service = fiber.ctx.switchblade;
+		defineCommands(ctx, service);
+	}, (error) => {
+		ctx.logger.warn(`[switchblade] command registration failed: ${error instanceof Error ? error.message : String(error)}`);
+	});
+}
+//#endregion
+export { ID_PREFIX, MANAGED_KINDS, SETTINGS_NAMESPACE, Switchblade, SwitchbladeSettingsSchema, apply, inject, isCommandName, isEntryId, isInstallSkillName, name };

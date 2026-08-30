@@ -61,6 +61,12 @@ export interface McpServerRow {
   readonly url?: string
   readonly headers?: Readonly<Record<string, string>>
   readonly enabled: boolean
+  /** Runtime: whether a live mcp-client instance is loaded. */
+  readonly running?: boolean
+  /** Runtime: tools currently registered from this server. */
+  readonly tools?: readonly { name: string; description: string }[]
+  /** Runtime: last startup/connection error, if any. */
+  readonly lastError?: string
 }
 
 /** The section's loaded view state. */
@@ -91,11 +97,6 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/**
- * Data controller bound to one session's connection.
- * @param api - the connection's API client.
- * @param sessionId - session the skill catalog resolves against.
- */
 export class SwitchbladeSectionController {
   /** Snapshot store backing the section's view state. */
   readonly store: SnapshotStore<SwitchbladeSectionState> = createSnapshotStore(IDLE)
@@ -157,16 +158,24 @@ export class SwitchbladeSectionController {
         }))
         : []
       const mcpServers: McpServerRow[] = Array.isArray(switchbladeSection?.mcpServers)
-        ? switchbladeSection.mcpServers.map((s: McpServerRow) => ({
-          serverName: s.serverName,
-          transport: s.transport,
-          ...s.command === undefined ? {} : { command: s.command },
-          ...s.args === undefined ? {} : { args: s.args },
-          ...s.env === undefined ? {} : { env: s.env },
-          ...s.url === undefined ? {} : { url: s.url },
-          ...s.headers === undefined ? {} : { headers: s.headers },
-          enabled: s.enabled ?? true,
-        }))
+        ? switchbladeSection.mcpServers.map((s: McpServerRow) => {
+          const status = (switchbladeSection?.mcpStatus as Record<string, { running?: boolean; tools?: readonly { name: string; description: string }[]; lastError?: string }> | undefined)?.[s.serverName]
+          return {
+            serverName: s.serverName,
+            transport: s.transport,
+            ...s.command === undefined ? {} : { command: s.command },
+            ...s.args === undefined ? {} : { args: s.args },
+            ...s.env === undefined ? {} : { env: s.env },
+            ...s.url === undefined ? {} : { url: s.url },
+            ...s.headers === undefined ? {} : { headers: s.headers },
+            enabled: s.enabled ?? true,
+            ...status === undefined ? {} : {
+              running: status.running ?? false,
+              tools: status.tools ?? [],
+              ...status.lastError === undefined ? {} : { lastError: status.lastError },
+            },
+          }
+        })
         : []
 
       this.store.set({
@@ -384,6 +393,21 @@ export class SwitchbladeSectionController {
     await this.writeMcpServers(next)
   }
 
+  /**
+   * Ask the Host to (re)start one server and republish its live status. The
+   * Host processes the one-shot request and updates mcpStatus; we refresh
+   * after a short delay so the panel shows the fresh tool list / error.
+   */
+  async testMcpServer(name: string): Promise<void> {
+    const res = await this.api.settings.mutate({
+      ns: 'switchblade',
+      ops: [{ op: 'set', path: ['mcpTestRequest'], value: { serverName: name, ts: Date.now() } }],
+    })
+    if (!res.result.ok) throw new Error(res.result.error.message)
+    await new Promise((r) => setTimeout(r, 2000))
+    await this.load()
+  }
+
   /** Persist the MCP server config list. */
   private async writeMcpServers(servers: readonly McpServerRow[]): Promise<void> {
     const res = await this.api.settings.mutate({
@@ -422,4 +446,5 @@ export interface SwitchbladeSectionInjected {
   updateMcpServer: (name: string, patch: Partial<McpServerRow>) => Promise<void>
   toggleMcpServer: (name: string, enabled: boolean) => Promise<void>
   removeMcpServer: (name: string) => Promise<void>
+  testMcpServer: (name: string) => Promise<void>
 }

@@ -88,4 +88,3 @@ export const en = {
     pickZipFile: 'Import .zip skill bundle',
     cliHint: 'Install via CLI (type in a session):',
 };
-//# sourceMappingURL=locales.js.map
