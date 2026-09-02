@@ -15,7 +15,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { SwitchbladeKey } from './locales.ts'
 import type { McpServerRow, SwitchbladeSectionInjected, SwitchbladeSectionState } from './store.ts'
 import { backgroundClient, DEFAULT_BACKGROUND, applyBackground, uploadMedia, isDesktopSurface, GRADIENTS, type BackgroundSettings } from './background.ts'
-import { listConversations, exportConversations, downloadExport, importConversations, type ConversationRow } from './conversations.ts'
+import { listConversations, exportConversations, downloadExport, importConversations, deleteConversations, type ConversationRow } from './conversations.ts'
 
 export type { SwitchbladeSectionInjected } from './store.ts'
 
@@ -331,7 +331,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
 type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'presets' | 'chat'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.8.1'
+const ARMORY_VERSION = '0.8.2'
 
 /** Render the Prompt-SkillArmory management page. */
 export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element {
@@ -463,6 +463,19 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     setChatBusy(true); setChatMsg('')
     const n = await importConversations(file, chatTarget.trim() || undefined)
     setChatMsg(n === null ? '导入失败' : `已导入 ${n} 个对话，重启客户端后生效`)
+    setChatBusy(false)
+  }
+
+  const doDeleteChat = async (): Promise<void> => {
+    const ids = [...chatSelected]
+    if (ids.length === 0) return
+    if (!window.confirm(`确定删除选中的 ${ids.length} 个对话吗？此操作不可恢复。`)) return
+    setChatBusy(true); setChatMsg('')
+    const n = await deleteConversations(ids)
+    if (n === null) { setChatMsg('删除失败'); setChatBusy(false); return }
+    setChatSelected(new Set())
+    setChatMsg(`已删除 ${n} 个对话`)
+    await reloadChat()
     setChatBusy(false)
   }
 
@@ -961,6 +974,9 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
               <div style={CSS.actions}>
                 <button style={CSS.actionBtn} disabled={chatBusy || chatSelected.size === 0} onClick={() => void doExportChat()}>
                   导出选中（{chatSelected.size}）
+                </button>
+                <button style={{ ...CSS.actionBtn, ...CSS.dangerBtn }} disabled={chatBusy || chatSelected.size === 0} onClick={() => void doDeleteChat()}>
+                  删除选中（{chatSelected.size}）
                 </button>
                 <label style={CSS.fileBtn}>
                   {chatBusy ? '处理中…' : '选择 zip 导入'}

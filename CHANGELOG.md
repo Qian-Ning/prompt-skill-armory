@@ -6,6 +6,12 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.8.2] - 2026-08
+
+### 新增 · Added
+- **真实删除对话**：对话 tab 新增「删除选中」（带确认），删除会话目录并从 DSH 会话索引移除。
+  **Real conversation delete**: a "delete selected" action (with confirm) in the Chat tab that removes the session directory and its index entry.
+
 ## [0.8.1] - 2026-08
 
 ### 新增 · Added

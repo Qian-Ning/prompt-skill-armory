@@ -38,6 +38,17 @@ export async function downloadExport(name: string): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+export async function deleteConversations(ids: string[]): Promise<number | null> {
+  try {
+    const r = await fetch('/api/armory/delete', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sessionIds: ids }),
+    })
+    const b = (await r.json()) as { ok: boolean; deleted?: number }
+    return b.ok ? (b.deleted ?? 0) : null
+  } catch { return null }
+}
+
 export async function importConversations(file: File, targetProject?: string): Promise<number | null> {
   try {
     const q = targetProject !== undefined && targetProject !== '' ? `?project=${encodeURIComponent(targetProject)}` : ''

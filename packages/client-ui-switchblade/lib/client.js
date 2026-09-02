@@ -552,6 +552,18 @@ window.__ModuleLoader__.load({
 			a.remove();
 			setTimeout(() => URL.revokeObjectURL(url), 1e3);
 		}
+		async function deleteConversations(ids) {
+			try {
+				const b = await (await fetch("/api/armory/delete", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ sessionIds: ids })
+				})).json();
+				return b.ok ? b.deleted ?? 0 : null;
+			} catch {
+				return null;
+			}
+		}
 		async function importConversations(file, targetProject) {
 			try {
 				const q = targetProject !== void 0 && targetProject !== "" ? `?project=${encodeURIComponent(targetProject)}` : "";
@@ -887,7 +899,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.8.1";
+		const ARMORY_VERSION = "0.8.2";
 		/** Render the Prompt-SkillArmory management page. */
 		function SwitchbladeSection(props) {
 			const { useSwitchblade, t, load, setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt, installSkill, updateSkill, setSkillEnabled, uninstallSkill, addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer, testMcpServer } = props;
@@ -1015,6 +1027,23 @@ window.__ModuleLoader__.load({
 				setChatMsg("");
 				const n = await importConversations(file, chatTarget.trim() || void 0);
 				setChatMsg(n === null ? "导入失败" : `已导入 ${n} 个对话，重启客户端后生效`);
+				setChatBusy(false);
+			};
+			const doDeleteChat = async () => {
+				const ids = [...chatSelected];
+				if (ids.length === 0) return;
+				if (!window.confirm(`确定删除选中的 ${ids.length} 个对话吗？此操作不可恢复。`)) return;
+				setChatBusy(true);
+				setChatMsg("");
+				const n = await deleteConversations(ids);
+				if (n === null) {
+					setChatMsg("删除失败");
+					setChatBusy(false);
+					return;
+				}
+				setChatSelected(/* @__PURE__ */ new Set());
+				setChatMsg(`已删除 ${n} 个对话`);
+				await reloadChat();
 				setChatBusy(false);
 			};
 			(0, react.useEffect)(() => {
@@ -2171,6 +2200,19 @@ window.__ModuleLoader__.load({
 												onClick: () => void doExportChat(),
 												children: [
 													"导出选中（",
+													chatSelected.size,
+													"）"
+												]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+												style: {
+													...CSS.actionBtn,
+													...CSS.dangerBtn
+												},
+												disabled: chatBusy || chatSelected.size === 0,
+												onClick: () => void doDeleteChat(),
+												children: [
+													"删除选中（",
 													chatSelected.size,
 													"）"
 												]

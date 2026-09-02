@@ -594,6 +594,38 @@ function resolveSession(key, id) {
 	const dir = join(SESSIONS_ROOT, key, id);
 	return existsSync(join(dir, "session.jsonl.zstd")) ? dir : void 0;
 }
+/** Delete one or more conversations: remove the session dir + the index entry. */
+async function deleteConversations(ids) {
+	let count = 0;
+	for (const full of ids) {
+		const slash = full.indexOf("/");
+		if (slash <= 0) continue;
+		const dir = resolveSession(full.slice(0, slash), full.slice(slash + 1));
+		if (dir === void 0) continue;
+		await rm(dir, {
+			recursive: true,
+			force: true
+		});
+		count++;
+	}
+	try {
+		const indexPath = join(STORAGES_ROOT, "session_projcache.json");
+		const raw = JSON.parse(await readFile(indexPath, "utf8"));
+		const sessions = raw.tables?.sessions;
+		if (sessions !== void 0) {
+			let changed = false;
+			for (const full of ids) {
+				const id = full.slice(full.indexOf("/") + 1);
+				if (id in sessions) {
+					delete sessions[id];
+					changed = true;
+				}
+			}
+			if (changed) await writeFile(indexPath, JSON.stringify(raw, null, 2));
+		}
+	} catch {}
+	return count;
+}
 async function buildExport(ids, includeAttachments, includeWorkspace) {
 	await mkdir(EXPORT_ROOT, { recursive: true });
 	const tmp = join(EXPORT_ROOT, "staging-" + randomBytes(6).toString("hex"));
@@ -756,6 +788,35 @@ function makeConversationRoutes() {
 					"content-disposition": `attachment; filename="${name}"`
 				});
 				res.end(await readFile(file));
+			}
+		},
+		{
+			kind: "exact",
+			path: `${PREFIX}/delete`,
+			handler: async (req, res) => {
+				if (!sameOrigin(req)) {
+					json(res, 403, {
+						ok: false,
+						error: "rejected"
+					});
+					return;
+				}
+				if (req.method !== "POST") {
+					json(res, 405, { ok: false });
+					return;
+				}
+				try {
+					const body = await readJson(req);
+					json(res, 200, {
+						ok: true,
+						deleted: await deleteConversations(Array.isArray(body.sessionIds) ? body.sessionIds.filter((x) => typeof x === "string") : [])
+					});
+				} catch (e) {
+					json(res, 400, {
+						ok: false,
+						error: e instanceof Error ? e.message : String(e)
+					});
+				}
 			}
 		},
 		{
