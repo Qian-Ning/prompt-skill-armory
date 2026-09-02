@@ -331,7 +331,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
 type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'presets' | 'chat'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.8.0'
+const ARMORY_VERSION = '0.8.1'
 
 /** Render the Prompt-SkillArmory management page. */
 export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element {

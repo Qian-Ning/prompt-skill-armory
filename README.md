@@ -11,13 +11,13 @@
 | <img src="docs/preview/preview-2.png" width="220"/> | <img src="docs/preview/preview-3.png" width="220"/> | <img src="docs/preview/preview-4.png" width="220"/> | <img src="docs/preview/preview-5.png" width="220"/> |
 |--|--|--|--|
 
-![version](https://img.shields.io/badge/version-0.8.0-00ff9c)
+![version](https://img.shields.io/badge/version-0.8.1-00ff9c)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![platform](https://img.shields.io/badge/platform-web%20%2B%20desktop-00ff9c)
 ![CI](https://github.com/Qian-Ning/prompt-skill-armory/actions/workflows/ci.yml/badge.svg)
 
 ```
-✦ Armory  v0.8.0
+✦ Armory  v0.8.1
 ┌─────────┬─────────┬─────┬────────────┬─────────┐
 │ 提示词    │  技能    │ MCP │  Wallpaper │ 预设     │
 │ 全局注入  │ 合并管理  │ 连接 │  壁纸·特效  │ roster  │
@@ -49,6 +49,12 @@
 
 ```bash
 npx prompt-skill-armory
+```
+
+卸载：
+
+```bash
+npx prompt-skill-armory uninstall
 ```
 
 安装器自动完成：
@@ -213,3 +219,7 @@ A: 三种：手动填写、`.md` 文件选择、会话内 `/armory-skill-dir`（
 ## 📄 许可
 
 MIT
+
+## 🔗 友情链接 · Friends
+
+- [**LINUX DO**](https://linux.do/) — 技术社区 · LINUX DO community

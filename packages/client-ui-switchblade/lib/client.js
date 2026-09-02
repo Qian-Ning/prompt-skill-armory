@@ -887,7 +887,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.8.0";
+		const ARMORY_VERSION = "0.8.1";
 		/** Render the Prompt-SkillArmory management page. */
 		function SwitchbladeSection(props) {
 			const { useSwitchblade, t, load, setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt, installSkill, updateSkill, setSkillEnabled, uninstallSkill, addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer, testMcpServer } = props;

@@ -6,6 +6,14 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.8.1] - 2026-08
+
+### 新增 · Added
+- **卸载命令**：`npx prompt-skill-armory uninstall` 移除插件（包、bundle、面板挂载）并清理壁纸/导出目录。
+  **Uninstall command**: `npx prompt-skill-armory uninstall` removes the plugin (packages, bundle, panel mount) and cleans up wallpaper/export dirs.
+- README 增加 LINUX DO 友情链接。
+  Added a LINUX DO friend link to the README.
+
 ## [0.8.0] - 2026-08
 
 ### 新增 · Added

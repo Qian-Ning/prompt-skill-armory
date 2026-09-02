@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-switchblade",
   "description": "Switchblade management page for skills, prompt profiles, and commands in the DeepSeek Harness web UI",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "publishConfig": {
     "access": "public"
   },

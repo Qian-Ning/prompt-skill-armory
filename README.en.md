@@ -11,13 +11,13 @@
 | <img src="docs/preview/preview-2.png" width="220"/> | <img src="docs/preview/preview-3.png" width="220"/> | <img src="docs/preview/preview-4.png" width="220"/> | <img src="docs/preview/preview-5.png" width="220"/> |
 |--|--|--|--|
 
-![version](https://img.shields.io/badge/version-0.8.0-00ff9c)
+![version](https://img.shields.io/badge/version-0.8.1-00ff9c)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![platform](https://img.shields.io/badge/platform-web%20%2B%20desktop-00ff9c)
 ![CI](https://github.com/Qian-Ning/prompt-skill-armory/actions/workflows/ci.yml/badge.svg)
 
 ```
-✦ Armory  v0.8.0
+✦ Armory  v0.8.1
 ┌─────────┬─────────┬─────┬────────────┬─────────┐
 │ Prompts │ Skills  │ MCP │  Wallpaper │ Presets │
 │ global  │ merged  │ hub │ wallpaper  │ roster  │
@@ -49,6 +49,12 @@
 
 ```bash
 npx prompt-skill-armory
+```
+
+Uninstall:
+
+```bash
+npx prompt-skill-armory uninstall
 ```
 
 The installer automatically:
@@ -214,3 +220,7 @@ See [`UPSTREAM.md`](./UPSTREAM.md) — how to upstream the panel natively into `
 ## 📄 License
 
 MIT
+
+## 🔗 Friends
+
+- [**LINUX DO**](https://linux.do/) — tech community · LINUX DO 社区
