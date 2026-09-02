@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { Service } from "@deepseek-ai/cordis";
 import { randomBytes } from "node:crypto";
@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { settingsNamespace } from "@deepseek-ai/dsh-settings";
 import z from "@deepseek-ai/schemastery";
+import { zstdDecompressSync } from "node:zlib";
 //#region src/commands.ts
 /**
 * The `/sw` slash-command family.
@@ -414,6 +415,387 @@ function dequote(raw) {
 	return value;
 }
 //#endregion
+//#region src/conversations.ts
+/**
+* Conversation import/export for Armory.
+*
+* DSH persists each conversation as `~/.dsh/sessions/<projectKey>/<sessionId>/session.jsonl.zstd`
+* (the projectKey is a path-encoded form like `--C-Users-17526--`), with media
+* attachments under `~/.dsh/attachments/v1` and workspace context under
+* `~/.dsh/storages/workspace.json`. Export bundles those files verbatim (no
+* zstd re-compression — the bytes are already portable), and import restores
+* them so the conversation looks identical on another machine.
+*
+* Archive format: a ZIP containing:
+*   manifest.json         { format:1, exportedAt, projectKeys[] }
+*   sessions/<key>/<id>/session.jsonl.zstd
+*   attachments/…         (optional)
+*   storages/workspace.json (optional)
+*
+* Uses Windows PowerShell Compress-Archive / Expand-Archive (no heavy npm deps;
+* the host already runs on Windows here).
+*/
+const exec = promisify(execFile);
+const HOME = join(homedir(), ".dsh");
+const SESSIONS_ROOT = join(HOME, "sessions");
+const ATTACHMENTS_ROOT = join(HOME, "attachments");
+const STORAGES_ROOT = join(HOME, "storages");
+const EXPORT_ROOT = join(HOME, "armory-exports");
+const PREFIX = "/api/armory";
+function json(res, status, body) {
+	res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
+	res.end(JSON.stringify(body));
+}
+const LOOPBACK = /* @__PURE__ */ new Set([
+	"127.0.0.1",
+	"localhost",
+	"[::1]",
+	"::1"
+]);
+function sameOrigin(req) {
+	if (req.headers["sec-fetch-site"] === "cross-site") return false;
+	const host = req.headers.host ?? "";
+	let bare = host;
+	if (bare.startsWith("[")) {
+		const e = bare.indexOf("]");
+		if (e !== -1) bare = bare.slice(0, e + 1);
+	} else {
+		const c = bare.indexOf(":");
+		if (c !== -1) bare = bare.slice(0, c);
+	}
+	return LOOPBACK.has(bare) || LOOPBACK.has(host);
+}
+function readBody(req, limit) {
+	return new Promise((resolve, reject) => {
+		const chunks = [];
+		let size = 0;
+		req.on("data", (c) => {
+			size += c.length;
+			if (size > limit) {
+				req.pause();
+				reject(/* @__PURE__ */ new Error("body-too-large"));
+				return;
+			}
+			chunks.push(c);
+		});
+		req.on("end", () => resolve(Buffer.concat(chunks)));
+		req.on("error", reject);
+	});
+}
+function readJson(req) {
+	return readBody(req, 1024 * 1024).then((b) => JSON.parse(b.toString("utf8") || "{}"));
+}
+async function ps(cmd) {
+	await exec("powershell.exe", [
+		"-NoProfile",
+		"-Command",
+		cmd
+	]);
+}
+/** Read the session title / project map from the DSH session project cache. */
+async function readTitleIndex() {
+	const out = /* @__PURE__ */ new Map();
+	try {
+		const sessions = JSON.parse(await readFile(join(STORAGES_ROOT, "session_projcache.json"), "utf8")).tables?.sessions ?? {};
+		for (const [id, v] of Object.entries(sessions)) {
+			const title = typeof v.rows?.title?.val === "string" ? v.rows.title.val : "";
+			const cwd = typeof v.identity?.cwd === "string" ? v.identity.cwd : "";
+			out.set(id, {
+				title,
+				cwd
+			});
+		}
+	} catch {}
+	return out;
+}
+const ZSTD_MAGIC = [
+	40,
+	181,
+	47,
+	253
+];
+/** Decompress the first few zstd frames of a session log (the title lives early). */
+async function readSessionHead(sdir, maxFrames) {
+	try {
+		const buf = await readFile(join(sdir, "session.jsonl.zstd"));
+		const starts = [];
+		for (let i = 0; i + 4 <= buf.length && starts.length < maxFrames; i++) if (buf[i] === ZSTD_MAGIC[0] && buf[i + 1] === ZSTD_MAGIC[1] && buf[i + 2] === ZSTD_MAGIC[2] && buf[i + 3] === ZSTD_MAGIC[3]) starts.push(i);
+		let text = "";
+		for (let f = 0; f < starts.length; f++) {
+			const from = starts[f];
+			const to = f + 1 < starts.length ? starts[f + 1] : buf.length;
+			try {
+				text += zstdDecompressSync(buf.subarray(from, to)).toString("utf8");
+			} catch {}
+			if (text.length > 65536) break;
+		}
+		return text;
+	} catch {
+		return "";
+	}
+}
+function firstUserText(head) {
+	const lines = head.split("\n");
+	for (const line of lines) {
+		let o;
+		try {
+			o = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		if (o === void 0 || o.type === void 0) continue;
+		if (o.type === "session/title" && typeof o.data?.title === "string" && o.data.title.trim() !== "") return o.data.title.trim().slice(0, 60);
+		if (o.type === "user/message" && o.data?.source?.kind === "user") {
+			let txt = "";
+			if (typeof o.data.text === "string") txt = o.data.text;
+			else if (typeof o.data.content === "string") txt = o.data.content;
+			else if (Array.isArray(o.data.content)) txt = o.data.content.map((c) => c && typeof c === "object" && "text" in c ? String(c.text ?? "") : "").join(" ");
+			const clean = txt.replace(/\s+/g, " ").trim();
+			if (clean !== "") return clean.slice(0, 60);
+		}
+	}
+	return "";
+}
+async function listConversations() {
+	const titles = await readTitleIndex();
+	const out = [];
+	const projects = await readdir(SESSIONS_ROOT).catch(() => []);
+	for (const projectKey of projects) {
+		const pdir = join(SESSIONS_ROOT, projectKey);
+		const ps = await stat(pdir).catch(() => void 0);
+		if (ps === void 0 || !ps.isDirectory()) continue;
+		const sessions = await readdir(pdir).catch(() => []);
+		for (const sessionId of sessions) {
+			const sdir = join(pdir, sessionId);
+			const ss = await stat(sdir).catch(() => void 0);
+			if (ss === void 0 || !ss.isDirectory() || !sessionId.startsWith("session-")) continue;
+			const fs = await stat(join(sdir, "session.jsonl.zstd")).catch(() => void 0);
+			const meta = titles.get(sessionId);
+			let title = meta?.title ?? "";
+			if (title === "") title = firstUserText(await readSessionHead(sdir, 80));
+			out.push({
+				projectKey,
+				sessionId,
+				title,
+				cwd: meta?.cwd ?? "",
+				mtime: ss.mtimeMs,
+				size: fs?.size ?? 0
+			});
+		}
+	}
+	return out.sort((a, b) => b.mtime - a.mtime);
+}
+function validName(name) {
+	return /^[a-zA-Z0-9._-]+$/.test(name);
+}
+/** Resolve a conversation id of the form `<projectKey>/<sessionId>`. */
+function resolveSession(key, id) {
+	if (!/^[a-zA-Z0-9._-]+$/.test(key) || !/^session-[a-f0-9-]+$/.test(id)) return void 0;
+	const dir = join(SESSIONS_ROOT, key, id);
+	return existsSync(join(dir, "session.jsonl.zstd")) ? dir : void 0;
+}
+async function buildExport(ids, includeAttachments, includeWorkspace) {
+	await mkdir(EXPORT_ROOT, { recursive: true });
+	const tmp = join(EXPORT_ROOT, "staging-" + randomBytes(6).toString("hex"));
+	const zip = join(EXPORT_ROOT, `armory-chat-${Date.now()}.zip`);
+	await mkdir(tmp, { recursive: true });
+	const projectKeys = /* @__PURE__ */ new Set();
+	for (const full of ids) {
+		const slash = full.indexOf("/");
+		if (slash <= 0) continue;
+		const key = full.slice(0, slash);
+		const id = full.slice(slash + 1);
+		const src = resolveSession(key, id);
+		if (src === void 0) continue;
+		const dst = join(tmp, "sessions", key, id);
+		await mkdir(dst, { recursive: true });
+		await cp(src, dst, { recursive: true });
+		projectKeys.add(key);
+	}
+	if (includeAttachments && existsSync(ATTACHMENTS_ROOT)) await cp(ATTACHMENTS_ROOT, join(tmp, "attachments"), { recursive: true });
+	if (includeWorkspace) {
+		const ws = join(STORAGES_ROOT, "workspace.json");
+		if (existsSync(ws)) {
+			await mkdir(join(tmp, "storages"), { recursive: true });
+			await cp(ws, join(tmp, "storages", "workspace.json"));
+		}
+	}
+	await writeFile(join(tmp, "manifest.json"), JSON.stringify({
+		format: 1,
+		exportedAt: Date.now(),
+		projectKeys: [...projectKeys]
+	}));
+	await ps(`Compress-Archive -Path "${join(tmp, "*")}" -DestinationPath "${zip}" -Force`);
+	await rm(tmp, {
+		recursive: true,
+		force: true
+	});
+	return {
+		zipPath: zip,
+		name: basename(zip)
+	};
+}
+async function importArchive(zipPath, targetProjectKey) {
+	const tmp = join(EXPORT_ROOT, "import-" + randomBytes(6).toString("hex"));
+	await mkdir(tmp, { recursive: true });
+	await ps(`Expand-Archive -Path "${zipPath}" -DestinationPath "${tmp}" -Force`);
+	const sessionsDir = join(tmp, "sessions");
+	let count = 0;
+	if (existsSync(sessionsDir)) {
+		const keys = await readdir(sessionsDir);
+		for (const key of keys) {
+			const destKey = targetProjectKey !== void 0 && targetProjectKey !== "" ? targetProjectKey : key;
+			if (!/^[a-zA-Z0-9._-]+$/.test(destKey)) continue;
+			const srcDir = join(sessionsDir, key);
+			const dstDir = join(SESSIONS_ROOT, destKey);
+			await mkdir(dstDir, { recursive: true });
+			const sessions = await readdir(srcDir);
+			for (const id of sessions) {
+				const s = await stat(join(srcDir, id)).catch(() => void 0);
+				if (s === void 0 || !s.isDirectory()) continue;
+				await cp(join(srcDir, id), join(dstDir, id), { recursive: true });
+				count++;
+			}
+		}
+	}
+	const att = join(tmp, "attachments");
+	if (existsSync(att)) {
+		await mkdir(ATTACHMENTS_ROOT, { recursive: true });
+		await cp(att, ATTACHMENTS_ROOT, { recursive: true });
+	}
+	const ws = join(tmp, "storages", "workspace.json");
+	if (existsSync(ws)) {
+		await mkdir(STORAGES_ROOT, { recursive: true });
+		await cp(ws, join(STORAGES_ROOT, "workspace.json"), { force: true });
+	}
+	await rm(tmp, {
+		recursive: true,
+		force: true
+	});
+	return count;
+}
+function makeConversationRoutes() {
+	return [
+		{
+			kind: "exact",
+			path: `${PREFIX}/sessions`,
+			handler: async (req, res) => {
+				if (!sameOrigin(req)) {
+					json(res, 403, {
+						ok: false,
+						error: "rejected"
+					});
+					return;
+				}
+				if (req.method !== "GET") {
+					json(res, 405, { ok: false });
+					return;
+				}
+				json(res, 200, {
+					ok: true,
+					sessions: await listConversations()
+				});
+			}
+		},
+		{
+			kind: "exact",
+			path: `${PREFIX}/export`,
+			handler: async (req, res) => {
+				if (!sameOrigin(req)) {
+					json(res, 403, {
+						ok: false,
+						error: "rejected"
+					});
+					return;
+				}
+				if (req.method !== "POST") {
+					json(res, 405, { ok: false });
+					return;
+				}
+				try {
+					const body = await readJson(req);
+					json(res, 200, {
+						ok: true,
+						name: (await buildExport(Array.isArray(body.sessionIds) ? body.sessionIds.filter((x) => typeof x === "string") : [], body.includeAttachments !== false, body.includeWorkspace !== false)).name
+					});
+				} catch (e) {
+					json(res, 400, {
+						ok: false,
+						error: e instanceof Error ? e.message : String(e)
+					});
+				}
+			}
+		},
+		{
+			kind: "prefix",
+			path: `${PREFIX}/export`,
+			handler: async (req, res) => {
+				if (!sameOrigin(req)) {
+					json(res, 403, {
+						ok: false,
+						error: "rejected"
+					});
+					return;
+				}
+				if (req.method !== "GET") {
+					json(res, 405, { ok: false });
+					return;
+				}
+				const name = (req.url ?? "").slice(`${PREFIX}/export`.length + 1);
+				if (!validName(name)) {
+					json(res, 404, { ok: false });
+					return;
+				}
+				const file = join(EXPORT_ROOT, name);
+				if (!existsSync(file)) {
+					json(res, 404, { ok: false });
+					return;
+				}
+				res.writeHead(200, {
+					"content-type": "application/zip",
+					"content-disposition": `attachment; filename="${name}"`
+				});
+				res.end(await readFile(file));
+			}
+		},
+		{
+			kind: "exact",
+			path: `${PREFIX}/import`,
+			handler: async (req, res) => {
+				if (!sameOrigin(req)) {
+					json(res, 403, {
+						ok: false,
+						error: "rejected"
+					});
+					return;
+				}
+				if (req.method !== "POST") {
+					json(res, 405, { ok: false });
+					return;
+				}
+				try {
+					const target = new URL(req.url ?? "/", "http://localhost").searchParams.get("project") ?? void 0;
+					const body = await readBody(req, 512 * 1024 * 1024);
+					await mkdir(EXPORT_ROOT, { recursive: true });
+					const zipPath = join(EXPORT_ROOT, "upload-" + randomBytes(6).toString("hex") + ".zip");
+					await writeFile(zipPath, body);
+					const count = await importArchive(zipPath, target);
+					await rm(zipPath, { force: true });
+					json(res, 200, {
+						ok: true,
+						imported: count
+					});
+				} catch (e) {
+					json(res, 400, {
+						ok: false,
+						error: e instanceof Error ? e.message : String(e)
+					});
+				}
+			}
+		}
+	];
+}
+//#endregion
 //#region src/switchblade.ts
 /**
 * `Switchblade` — the Host-side core of the management surface.
@@ -623,7 +1005,7 @@ var Switchblade = class extends Service {
 			settingsCtx.logger.warn(`[switchblade] settings registered; prompts=${scope.get().prompts.length} skills=${scope.get().installedSkills.length}`);
 			this.reinstall(scope.get());
 			try {
-				for (const route of this.wallpaperRoutes()) settingsCtx.effect(() => {
+				for (const route of [...this.wallpaperRoutes(), ...makeConversationRoutes()]) settingsCtx.effect(() => {
 					try {
 						settingsCtx.webServer.register(route);
 					} catch (e) {

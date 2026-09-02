@@ -516,6 +516,56 @@ window.__ModuleLoader__.load({
 			} catch {}
 		}
 		//#endregion
+		//#region src/client/conversations.ts
+		async function listConversations() {
+			try {
+				const b = await (await fetch("/api/armory/sessions")).json();
+				return b.ok ? b.sessions ?? [] : [];
+			} catch {
+				return [];
+			}
+		}
+		async function exportConversations(ids) {
+			try {
+				const b = await (await fetch("/api/armory/export", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({
+						sessionIds: ids,
+						includeAttachments: true,
+						includeWorkspace: true
+					})
+				})).json();
+				return b.ok && b.name !== void 0 ? b.name : null;
+			} catch {
+				return null;
+			}
+		}
+		async function downloadExport(name) {
+			const blob = await (await fetch(`/api/armory/export/${name}`)).blob();
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = name;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 1e3);
+		}
+		async function importConversations(file, targetProject) {
+			try {
+				const q = targetProject !== void 0 && targetProject !== "" ? `?project=${encodeURIComponent(targetProject)}` : "";
+				const b = await (await fetch(`/api/armory/import${q}`, {
+					method: "POST",
+					headers: { "content-type": "application/zip" },
+					body: file
+				})).json();
+				return b.ok ? b.imported ?? 0 : null;
+			} catch {
+				return null;
+			}
+		}
+		//#endregion
 		//#region src/client/SwitchbladeSection.tsx
 		/**
 		* Prompt-SkillArmory management page.
@@ -837,7 +887,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.7.2";
+		const ARMORY_VERSION = "0.8.0";
 		/** Render the Prompt-SkillArmory management page. */
 		function SwitchbladeSection(props) {
 			const { useSwitchblade, t, load, setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt, installSkill, updateSkill, setSkillEnabled, uninstallSkill, addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer, testMcpServer } = props;
@@ -927,6 +977,46 @@ window.__ModuleLoader__.load({
 				setMcpHeaders(Object.entries(server.headers ?? {}).map(([k, v]) => `${k}=${v}`).join("\n"));
 			};
 			const [bgDraft, setBgDraft] = (0, react.useState)(DEFAULT_BACKGROUND);
+			const [chatRows, setChatRows] = (0, react.useState)([]);
+			const [chatSelected, setChatSelected] = (0, react.useState)(/* @__PURE__ */ new Set());
+			const [chatTarget, setChatTarget] = (0, react.useState)("");
+			const [chatBusy, setChatBusy] = (0, react.useState)(false);
+			const [chatMsg, setChatMsg] = (0, react.useState)("");
+			const reloadChat = async () => {
+				setChatRows(await listConversations());
+			};
+			(0, react.useEffect)(() => {
+				reloadChat();
+			}, []);
+			const toggleChatSel = (id) => {
+				setChatSelected((prev) => {
+					const n = new Set(prev);
+					if (n.has(id)) n.delete(id);
+					else n.add(id);
+					return n;
+				});
+			};
+			const doExportChat = async () => {
+				setChatBusy(true);
+				setChatMsg("");
+				const name = await exportConversations([...chatSelected]);
+				if (name === null) {
+					setChatMsg("导出失败");
+					setChatBusy(false);
+					return;
+				}
+				await downloadExport(name);
+				setChatMsg(`已导出 ${name}`);
+				setChatBusy(false);
+			};
+			const onChatFile = async (file) => {
+				if (file === void 0) return;
+				setChatBusy(true);
+				setChatMsg("");
+				const n = await importConversations(file, chatTarget.trim() || void 0);
+				setChatMsg(n === null ? "导入失败" : `已导入 ${n} 个对话，重启客户端后生效`);
+				setChatBusy(false);
+			};
 			(0, react.useEffect)(() => {
 				const snap = backgroundClient.getSnapshot();
 				if (snap.status === "ready") {
@@ -1204,6 +1294,21 @@ window.__ModuleLoader__.load({
 								},
 								onClick: () => setActiveTab("wallpaper"),
 								children: "Wallpaper"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+								style: {
+									...CSS.tab,
+									...activeTab === "chat" ? CSS.tabActive : {}
+								},
+								onClick: () => {
+									setActiveTab("chat");
+									reloadChat();
+								},
+								children: [
+									"对话 (",
+									chatRows.length,
+									")"
+								]
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 								style: {
@@ -2027,7 +2132,134 @@ window.__ModuleLoader__.load({
 										}, g.id))]
 									})
 								]
-							}) })
+							}) }),
+							activeTab === "chat" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: CSS.form,
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											alignItems: "center",
+											justifyContent: "space-between"
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: {
+												fontSize: "13px",
+												fontWeight: 600
+											},
+											children: "对话导入 / 导出"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											style: CSS.actionBtn,
+											onClick: () => void reloadChat(),
+											disabled: chatBusy,
+											children: "刷新"
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										style: {
+											...CSS.desc,
+											lineHeight: "1.5"
+										},
+										children: "勾选要导出的对话，打成一个 zip；在另一台机器选该 zip 导入即可还原（含附件与工作区）。"
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: CSS.actions,
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+												style: CSS.actionBtn,
+												disabled: chatBusy || chatSelected.size === 0,
+												onClick: () => void doExportChat(),
+												children: [
+													"导出选中（",
+													chatSelected.size,
+													"）"
+												]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+												style: CSS.fileBtn,
+												children: [chatBusy ? "处理中…" : "选择 zip 导入", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+													type: "file",
+													accept: ".zip",
+													style: { display: "none" },
+													onChange: (e) => void onChatFile(e.target.files?.[0])
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+												style: CSS.input,
+												placeholder: "目标项目 key（留空=保持原项目）",
+												value: chatTarget,
+												onChange: (e) => setChatTarget(e.target.value)
+											})
+										]
+									}),
+									chatMsg !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										style: CSS.hint,
+										children: chatMsg
+									})
+								]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								style: CSS.scrollBox,
+								children: chatRows.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									style: CSS.empty,
+									children: "暂无对话"
+								}) : chatRows.map((row) => {
+									const id = `${row.projectKey}/${row.sessionId}`;
+									const sel = chatSelected.has(id);
+									return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: CSS.card,
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: CSS.cardTop,
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: {
+													display: "flex",
+													alignItems: "center",
+													gap: "8px",
+													minWidth: 0,
+													flex: 1
+												},
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+													type: "checkbox",
+													checked: sel,
+													onChange: () => toggleChatSel(id),
+													style: { flex: "none" }
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														...CSS.name,
+														whiteSpace: "nowrap",
+														overflow: "hidden",
+														textOverflow: "ellipsis",
+														flex: 1,
+														minWidth: 0
+													},
+													title: row.title || id,
+													children: row.title || "未命名对话"
+												})]
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												style: {
+													...CSS.badge,
+													...CSS.badgeDisabled,
+													flex: "none"
+												},
+												children: row.cwd ? row.cwd.split(/[\\/]/).filter(Boolean).pop() : row.projectKey
+											})]
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: {
+												...CSS.desc,
+												whiteSpace: "nowrap",
+												overflow: "hidden",
+												textOverflow: "ellipsis"
+											},
+											children: [
+												row.cwd || row.projectKey,
+												" · ",
+												new Date(row.mtime).toLocaleString(),
+												" · ",
+												row.size >= 1024 ? (row.size / 1024).toFixed(1) + " KB" : row.size + " B"
+											]
+										})]
+									}, id);
+								})
+							})] })
 						]
 					})
 				]

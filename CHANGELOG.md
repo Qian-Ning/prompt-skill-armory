@@ -6,6 +6,14 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.8.0] - 2026-08
+
+### 新增 · Added
+- **对话导入 / 导出**：勾选多个会话导出为 zip（含附件与工作区），另一台机器导入即可还原；新增「对话」tab，显示对话标题、项目与时间。
+  **Conversation import/export**: export selected sessions as a zip (with attachments & workspace) and restore them on another machine; new "Chat" tab showing title, project and time.
+- 会话标题回退：读取 DSH 会话缓存标题，缺失时从会话日志取第一条用户消息（与官方默认标题一致）。
+  Title fallback: use the DSH session-cache title, falling back to the first user message from the log (matching the official default-title rule).
+
 ## [0.7.2] - 2026-08
 
 ### 变更 · Changed

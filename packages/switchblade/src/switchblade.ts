@@ -20,7 +20,7 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import { cp, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
@@ -43,6 +43,7 @@ import type {
   SwitchbladeActionResult, SwitchbladeCatalog, SwitchbladeEntry, SwitchbladeSnapshot,
 } from './types.ts'
 import { parsePatch, renderPatch } from './patch.ts'
+import { makeConversationRoutes } from './conversations.ts'
 
 /** Promise-wrapped execFile for the zip extraction helper. */
 const execFileAsync = promisify(execFile)
@@ -291,7 +292,7 @@ export class Switchblade extends Service {
       settingsCtx.logger.warn(`[switchblade] settings registered; prompts=${scope.get().prompts.length} skills=${scope.get().installedSkills.length}`)
       this.reinstall(scope.get())
       try {
-        for (const route of this.wallpaperRoutes()) {
+        for (const route of [...this.wallpaperRoutes(), ...makeConversationRoutes()]) {
           settingsCtx.effect(() => { try { settingsCtx.webServer.register(route) } catch (e) { settingsCtx.logger.warn(`[switchblade] route failed: ${String(e)}`) } }, 'switchblade: bg route')
         }
       } catch (e) { settingsCtx.logger.warn(`[switchblade] route setup failed: ${String(e)}`) }

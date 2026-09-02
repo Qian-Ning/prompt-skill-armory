@@ -15,6 +15,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { SwitchbladeKey } from './locales.ts'
 import type { McpServerRow, SwitchbladeSectionInjected, SwitchbladeSectionState } from './store.ts'
 import { backgroundClient, DEFAULT_BACKGROUND, applyBackground, uploadMedia, isDesktopSurface, GRADIENTS, type BackgroundSettings } from './background.ts'
+import { listConversations, exportConversations, downloadExport, importConversations, type ConversationRow } from './conversations.ts'
 
 export type { SwitchbladeSectionInjected } from './store.ts'
 
@@ -327,10 +328,10 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
   )
 }
 
-type TabKey = 'prompts' | 'skills' | 'mcp' | 'presets' | 'wallpaper'
+type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'presets' | 'chat'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.7.2'
+const ARMORY_VERSION = '0.8.0'
 
 /** Render the Prompt-SkillArmory management page. */
 export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element {
@@ -430,6 +431,40 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
   // Background / effects draft + handlers (persisted via backgroundClient
   // route; live preview through applyBackground / applyBackgroundKnob).
   const [bgDraft, setBgDraft] = useState<BackgroundSettings>(DEFAULT_BACKGROUND)
+
+  // Conversation import/export state
+  const [chatRows, setChatRows] = useState<ConversationRow[]>([])
+  const [chatSelected, setChatSelected] = useState<Set<string>>(new Set())
+  const [chatTarget, setChatTarget] = useState('')
+  const [chatBusy, setChatBusy] = useState(false)
+  const [chatMsg, setChatMsg] = useState('')
+
+  const reloadChat = async (): Promise<void> => {
+    setChatRows(await listConversations())
+  }
+
+  useEffect(() => { void reloadChat() }, [])
+
+  const toggleChatSel = (id: string): void => {
+    setChatSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  }
+
+  const doExportChat = async (): Promise<void> => {
+    setChatBusy(true); setChatMsg('')
+    const name = await exportConversations([...chatSelected])
+    if (name === null) { setChatMsg('导出失败'); setChatBusy(false); return }
+    await downloadExport(name)
+    setChatMsg(`已导出 ${name}`)
+    setChatBusy(false)
+  }
+
+  const onChatFile = async (file: File | undefined): Promise<void> => {
+    if (file === undefined) return
+    setChatBusy(true); setChatMsg('')
+    const n = await importConversations(file, chatTarget.trim() || undefined)
+    setChatMsg(n === null ? '导入失败' : `已导入 ${n} 个对话，重启客户端后生效`)
+    setChatBusy(false)
+  }
 
   useEffect(() => {
     const snap = backgroundClient.getSnapshot()
@@ -618,6 +653,9 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
         </button>
         <button style={{ ...CSS.tab, ...(activeTab === 'wallpaper' ? CSS.tabActive : {}) }} onClick={() => setActiveTab('wallpaper')}>
           Wallpaper
+        </button>
+        <button style={{ ...CSS.tab, ...(activeTab === 'chat' ? CSS.tabActive : {}) }} onClick={() => { setActiveTab('chat'); void reloadChat() }}>
+          对话 ({chatRows.length})
         </button>
         <button style={{ ...CSS.tab, ...(activeTab === 'presets' ? CSS.tabActive : {}) }} onClick={() => setActiveTab('presets')}>
           {t('agentPresetsTitle')} ({state.status === 'loading' ? '…' : presetRows.length})
@@ -905,6 +943,56 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
                     onClick={() => updateBgLive({ hint: { ...bgDraft.hint, gradient: g.id } })}>{g.name}</button>
                 ))}
               </div>
+            </div>
+          </>
+        )}
+
+        {/* ── Tab: conversations ───────────────────────────── */}
+        {activeTab === 'chat' && (
+          <>
+            <div style={CSS.form}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600 }}>对话导入 / 导出</span>
+                <button style={CSS.actionBtn} onClick={() => void reloadChat()} disabled={chatBusy}>刷新</button>
+              </div>
+              <div style={{ ...CSS.desc, lineHeight: '1.5' }}>
+                勾选要导出的对话，打成一个 zip；在另一台机器选该 zip 导入即可还原（含附件与工作区）。
+              </div>
+              <div style={CSS.actions}>
+                <button style={CSS.actionBtn} disabled={chatBusy || chatSelected.size === 0} onClick={() => void doExportChat()}>
+                  导出选中（{chatSelected.size}）
+                </button>
+                <label style={CSS.fileBtn}>
+                  {chatBusy ? '处理中…' : '选择 zip 导入'}
+                  <input type="file" accept=".zip" style={{ display: 'none' }} onChange={(e) => void onChatFile(e.target.files?.[0])} />
+                </label>
+                <input style={CSS.input} placeholder="目标项目 key（留空=保持原项目）" value={chatTarget} onChange={(e) => setChatTarget(e.target.value)} />
+              </div>
+              {chatMsg !== '' && <div style={CSS.hint}>{chatMsg}</div>}
+            </div>
+            <div style={CSS.scrollBox}>
+              {chatRows.length === 0
+                ? <div style={CSS.empty}>暂无对话</div>
+                : chatRows.map((row) => {
+                    const id = `${row.projectKey}/${row.sessionId}`
+                    const sel = chatSelected.has(id)
+                    return (
+                      <div key={id} style={CSS.card}>
+                        <div style={CSS.cardTop}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                            <input type="checkbox" checked={sel} onChange={() => toggleChatSel(id)} style={{ flex: 'none' }} />
+                            <div style={{ ...CSS.name, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }} title={row.title || id}>
+                              {row.title || '未命名对话'}
+                            </div>
+                          </div>
+                          <span style={{ ...CSS.badge, ...CSS.badgeDisabled, flex: 'none' }}>{row.cwd ? row.cwd.split(/[\\/]/).filter(Boolean).pop() : row.projectKey}</span>
+                        </div>
+                        <div style={{ ...CSS.desc, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {row.cwd || row.projectKey} · {new Date(row.mtime).toLocaleString()} · {row.size >= 1024 ? (row.size / 1024).toFixed(1) + ' KB' : row.size + ' B'}
+                        </div>
+                      </div>
+                    )
+                  })}
             </div>
           </>
         )}
