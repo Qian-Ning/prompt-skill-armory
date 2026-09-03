@@ -6,6 +6,16 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.9.7] - 2026-08
+
+### 修复 · Fixed
+- 对话删除与工作区下拉「没反应」：导出/导入/删除的异步处理缺少 try/finally，一旦下载抛错 `chatBusy` 卡死为 true，整个工具栏被禁用。现在所有处理统一 try/finally 复位，并逐会话容错删除、同步清理 `workspace.json` 里的 sessionId 引用（防止幽灵会话复活）。
+  Delete and the workspace selector appeared dead: the async handlers lacked try/finally, so a failed download left `chatBusy` stuck true and disabled the whole toolbar. Handlers now always reset via finally; deletion is per-session resilient and scrubs sessionIds from `workspace.json` (no ghost-session resurrection).
+- 工作区名过长溢出面板：会话列表徽章加最大宽度 + 省略号，整体导出下拉限宽 220px。
+  Long workspace names no longer overflow: the session badge gets max-width + ellipsis and the export selector is capped at 220px.
+- 折线图 Token 轴改为对数刻度：输入 Token 通常比输出大一个数量级，线性轴会把输出线压成贴地；对数轴让输入/输出/缓存的形状都清晰可读（步骤轴保持线性）。
+  The chart token axis now uses a log scale: input tokens are typically an order of magnitude above output, so a linear axis flattened the output line into the baseline; log scale keeps every series readable (the steps axis stays linear).
+
 ## [0.9.6] - 2026-08
 
 ### 修复 · Fixed

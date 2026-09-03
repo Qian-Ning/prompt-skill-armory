@@ -12,13 +12,13 @@
 |--|--|--|--|
 | <img src="docs/preview/preview-6.png" width="220"/> | <img src="docs/preview/preview-7.png" width="220"/> | | |
 
-![version](https://img.shields.io/badge/version-0.9.6-00ff9c)
+![version](https://img.shields.io/badge/version-0.9.7-00ff9c)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![platform](https://img.shields.io/badge/platform-web%20%2B%20desktop-00ff9c)
 ![CI](https://github.com/Qian-Ning/prompt-skill-armory/actions/workflows/ci.yml/badge.svg)
 
 ```
-✦ Armory  v0.9.6
+✦ Armory  v0.9.7
 ┌─────────┬─────────┬─────┬────────────┬──────┬──────┐
 │ 提示词    │  技能    │ MCP │  Wallpaper │ 对话  │ 统计 │
 │ 全局注入  │ 合并管理  │ 连接 │  壁纸·特效  │ 导入  │ 用量 │
@@ -114,7 +114,7 @@ pnpm dsh web
 
 插件面板每次打开会自动查询 npm 上 `prompt-skill-armory` 的最新版本；发现新版本时顶部显示横幅：
 
-> 有新版本 vX.Y.Z（当前 v0.9.6） [一键更新]
+> 有新版本 vX.Y.Z（当前 v0.9.7） [一键更新]
 
 点击「一键更新」→ Host 端运行官方安装器原地重装 → 提示「更新完成，请重启客户端生效」。
 

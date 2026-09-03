@@ -28,24 +28,31 @@ export async function exportConversations(ids: string[], projectKey?: string): P
   } catch { return null }
 }
 
-export async function downloadExport(name: string): Promise<void> {
-  const r = await fetch(`/api/armory/export/${name}`)
-  const blob = await r.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = name
-  document.body.appendChild(a); a.click(); a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+export async function downloadExport(name: string): Promise<boolean> {
+  try {
+    const r = await fetch(`/api/armory/export/${name}`)
+    if (!r.ok) return false
+    const blob = await r.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = name
+    document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    return true
+  } catch { return false }
 }
 
-export async function deleteConversations(ids: string[]): Promise<number | null> {
+export interface DeleteResult { deleted: number; failed: string[] }
+
+export async function deleteConversations(ids: string[]): Promise<DeleteResult | null> {
   try {
     const r = await fetch('/api/armory/delete', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ sessionIds: ids }),
     })
-    const b = (await r.json()) as { ok: boolean; deleted?: number }
-    return b.ok ? (b.deleted ?? 0) : null
+    const b = (await r.json()) as { ok: boolean; deleted?: number; failed?: string[] }
+    if (!b.ok) return null
+    return { deleted: b.deleted ?? 0, failed: Array.isArray(b.failed) ? b.failed : [] }
   } catch { return null }
 }
 

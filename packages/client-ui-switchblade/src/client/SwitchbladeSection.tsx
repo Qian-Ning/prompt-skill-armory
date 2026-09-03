@@ -331,7 +331,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
 type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'chat' | 'stats'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.9.6'
+const ARMORY_VERSION = '0.9.7'
 
 /** Compact duration: 45.2s / 2m42s / 1h05m. */
 function fmtDuration(ms: number): string {
@@ -376,9 +376,10 @@ function TrendChart({ byDay }: { byDay: TrendPoint[] }): JSX.Element {
   if (n === 0) return <div style={CSS.empty}>暂无趋势数据</div>
 
   const maxSteps = Math.max(...byDay.map((d) => d.steps), 1)
-  // All token series share the right axis — input tokens are typically an
-  // order of magnitude larger than output, so maxing on output alone pushed
-  // the input line above the viewport (negative y) and made it invisible.
+  // All token series share the right axis. Input tokens are typically an
+  // order of magnitude larger than output, so a linear scale flattens the
+  // output line into the baseline. A log scale keeps both shapes visible;
+  // the steps axis on the left stays linear.
   const maxTokens = Math.max(
     ...byDay.map((d) => d.outputTokens),
     ...byDay.map((d) => d.inputTokens),
@@ -386,16 +387,21 @@ function TrendChart({ byDay }: { byDay: TrendPoint[] }): JSX.Element {
     ...byDay.map((d) => d.cacheWriteTokens),
     1,
   )
+  const logBase = Math.max(Math.log10(maxTokens), 1) // at least one decade
   const x = (i: number): number => PAD.l + (n === 1 ? iw / 2 : (i / (n - 1)) * iw)
   const ySteps = (v: number): number => PAD.t + ih - (v / maxSteps) * ih
-  const yTok = (v: number): number => PAD.t + ih - (v / maxTokens) * ih
+  const yTok = (v: number): number => {
+    const vv = Math.max(v, 1)
+    return PAD.t + ih - (Math.log10(vv) / logBase) * ih
+  }
 
   const pathSteps = byDay.map((d, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${ySteps(d.steps).toFixed(1)}`).join(' ')
   const pathOut = byDay.map((d, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${yTok(d.outputTokens).toFixed(1)}`).join(' ')
   const pathIn = byDay.map((d, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${yTok(d.inputTokens).toFixed(1)}`).join(' ')
 
-  // Right-axis tick labels: round nice token counts (1 / 2 / 5 stepping).
-  const tokTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * maxTokens)
+  // Right-axis ticks in log space: 0% / 25% / 50% / 75% / 100% of the decade,
+  // rounded to a nice token count (1 / 2 / 5 stepping).
+  const tokTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.pow(10, f * logBase))
   const niceToken = (v: number): string => {
     if (v >= 1e6) return `${(v / 1e6).toFixed(v % 1e6 === 0 ? 0 : 1)}M`
     if (v >= 1e3) return `${(v / 1e3).toFixed(v % 1e3 === 0 ? 0 : 1)}k`
@@ -423,10 +429,10 @@ function TrendChart({ byDay }: { byDay: TrendPoint[] }): JSX.Element {
         ))}
         {/* right tokens axis: 5 rounded ticks + max label */}
         {tokTicks.map((v, i) => {
-          const yy = PAD.t + ih - (v / maxTokens) * ih
+          const yy = yTok(v)
           return (
             <text key={i} x={W - PAD.r + 6} y={yy + 3} fontSize="9" fill={i === 4 ? '#3fb950' : '#8b949e'}>
-              {i === 0 ? '0' : niceToken(v)}
+              {niceToken(v)}
             </text>
           )
         })}
@@ -642,22 +648,24 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
 
   const doExportChat = async (): Promise<void> => {
     setChatBusy(true); setChatMsg('')
-    const name = await exportConversations([...chatSelected])
-    if (name === null) { setChatMsg('导出失败'); setChatBusy(false); return }
-    await downloadExport(name)
-    setChatMsg(`已导出 ${name}`)
-    setChatBusy(false)
+    try {
+      const name = await exportConversations([...chatSelected])
+      if (name === null) { setChatMsg('导出失败'); return }
+      const ok = await downloadExport(name)
+      setChatMsg(ok ? `已导出 ${name}` : '导出失败：下载未完成')
+    } catch { setChatMsg('导出失败') } finally { setChatBusy(false) }
   }
 
   const doExportProject = async (): Promise<void> => {
     const key = chatProject.trim()
     if (key === '') { setChatMsg('请先选择项目工作区'); return }
     setChatBusy(true); setChatMsg('')
-    const name = await exportConversations([], key)
-    if (name === null) { setChatMsg('导出失败'); setChatBusy(false); return }
-    await downloadExport(name)
-    setChatMsg(`已导出整个项目 ${key} → ${name}`)
-    setChatBusy(false)
+    try {
+      const name = await exportConversations([], key)
+      if (name === null) { setChatMsg('导出失败'); return }
+      const ok = await downloadExport(name)
+      setChatMsg(ok ? `已导出整个项目 ${key} → ${name}` : '导出失败：下载未完成')
+    } catch { setChatMsg('导出失败') } finally { setChatBusy(false) }
   }
 
   const doUpdate = async (): Promise<void> => {
@@ -670,10 +678,11 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
   const onChatFile = async (file: File | undefined): Promise<void> => {
     if (file === undefined) return
     setChatBusy(true); setChatMsg('')
-    const n = await importConversations(file, chatTarget.trim() || undefined)
-    setChatMsg(n === null ? '导入失败' : `已导入 ${n} 个对话，重启客户端后生效`)
-    if (n !== null) { refreshSessions(); await reloadChat() }
-    setChatBusy(false)
+    try {
+      const n = await importConversations(file, chatTarget.trim() || undefined)
+      setChatMsg(n === null ? '导入失败' : `已导入 ${n} 个对话，重启客户端后生效`)
+      if (n !== null) { refreshSessions(); await reloadChat() }
+    } catch { setChatMsg('导入失败') } finally { setChatBusy(false) }
   }
 
   const doDeleteChat = async (): Promise<void> => {
@@ -681,13 +690,15 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     if (ids.length === 0) return
     if (!window.confirm(`确定删除选中的 ${ids.length} 个对话吗？此操作不可恢复。`)) return
     setChatBusy(true); setChatMsg('')
-    const n = await deleteConversations(ids)
-    if (n === null) { setChatMsg('删除失败'); setChatBusy(false); return }
-    setChatSelected(new Set())
-    setChatMsg(`已删除 ${n} 个对话`)
-    refreshSessions()
-    await reloadChat()
-    setChatBusy(false)
+    try {
+      const r = await deleteConversations(ids)
+      if (r === null) { setChatMsg('删除失败'); return }
+      setChatSelected(new Set())
+      const failMsg = r.failed.length > 0 ? `；${r.failed.length} 个删除失败（文件可能被占用，可稍后重试）` : ''
+      setChatMsg(`已删除 ${r.deleted} 个对话${failMsg}`)
+      refreshSessions()
+      await reloadChat()
+    } catch { setChatMsg('删除失败') } finally { setChatBusy(false) }
   }
 
   useEffect(() => {
@@ -1170,10 +1181,10 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
                   导出整个项目
                 </button>
                 <select
-                  style={CSS.input}
+                  style={{ ...CSS.input, maxWidth: '220px', textOverflow: 'ellipsis' }}
                   value={chatProject}
                   onChange={(e) => setChatProject(e.target.value)}
-                  disabled={chatBusy || chatProjects.length === 0}
+                  disabled={chatProjects.length === 0}
                   title="选择要整体导出的项目工作区"
                 >
                   {chatProjects.length === 0 && <option value="">（无项目）</option>}
@@ -1207,7 +1218,9 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
                               {row.title || '未命名对话'}
                             </div>
                           </div>
-                          <span style={{ ...CSS.badge, ...CSS.badgeDisabled, flex: 'none' }}>{row.cwd ? row.cwd.split(/[\\/]/).filter(Boolean).pop() : row.projectKey}</span>
+                          <span style={{ ...CSS.badge, ...CSS.badgeDisabled, flex: 'none', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.cwd || row.projectKey}>
+                            {row.cwd ? row.cwd.split(/[\\/]/).filter(Boolean).pop() : row.projectKey}
+                          </span>
                         </div>
                         <div style={{ ...CSS.desc, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {row.cwd || row.projectKey} · {new Date(row.mtime).toLocaleString()} · {row.size >= 1024 ? (row.size / 1024).toFixed(1) + ' KB' : row.size + ' B'}

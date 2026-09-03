@@ -898,37 +898,78 @@ function resolveSession(key, id) {
 	const dir = join(SESSIONS_ROOT, key, id);
 	return existsSync(join(dir, "session.jsonl.zstd")) ? dir : void 0;
 }
-/** Delete one or more conversations: remove the session dir + the index entry. */
+/** Delete one or more conversations: remove the session dir + index entries.
+* Returns per-session results so the UI can report which (if any) failed —
+* a locked file (DSH holding it open) must not abort the whole batch. */
 async function deleteConversations(ids) {
-	let count = 0;
+	const deletedIds = [];
+	const failed = [];
 	for (const full of ids) {
 		const slash = full.indexOf("/");
-		if (slash <= 0) continue;
-		const dir = resolveSession(full.slice(0, slash), full.slice(slash + 1));
-		if (dir === void 0) continue;
-		await rm(dir, {
-			recursive: true,
-			force: true
-		});
-		count++;
+		if (slash <= 0) {
+			failed.push(full);
+			continue;
+		}
+		const key = full.slice(0, slash);
+		const id = full.slice(slash + 1);
+		const dir = resolveSession(key, id);
+		if (dir === void 0) {
+			failed.push(full);
+			continue;
+		}
+		try {
+			await rm(dir, {
+				recursive: true,
+				force: true
+			});
+			deletedIds.push(id);
+		} catch {
+			failed.push(full);
+		}
 	}
+	if (deletedIds.length === 0) return {
+		deleted: 0,
+		failed
+	};
 	try {
 		const indexPath = join(STORAGES_ROOT, "session_projcache.json");
 		const raw = JSON.parse(await readFile(indexPath, "utf8"));
 		const sessions = raw.tables?.sessions;
 		if (sessions !== void 0) {
 			let changed = false;
-			for (const full of ids) {
-				const id = full.slice(full.indexOf("/") + 1);
-				if (id in sessions) {
-					delete sessions[id];
-					changed = true;
-				}
+			for (const id of deletedIds) if (id in sessions) {
+				delete sessions[id];
+				changed = true;
 			}
 			if (changed) await writeFile(indexPath, JSON.stringify(raw, null, 2));
 		}
 	} catch {}
-	return count;
+	try {
+		const wsPath = join(STORAGES_ROOT, "workspace.json");
+		const raw = JSON.parse(await readFile(wsPath, "utf8"));
+		const dead = new Set(deletedIds);
+		let changed = false;
+		const workspaces = raw.tables?.workspaces;
+		if (workspaces !== void 0) for (const w of Object.values(workspaces)) {
+			const kept = w.sessionIds.filter((sid) => !dead.has(sid));
+			if (kept.length !== w.sessionIds.length) {
+				w.sessionIds = kept;
+				changed = true;
+			}
+		}
+		if (raw.global?.archivedSessionIds !== void 0) {
+			const kept = raw.global.archivedSessionIds.filter((sid) => !dead.has(sid));
+			if (kept.length !== raw.global.archivedSessionIds.length) {
+				raw.global.archivedSessionIds = kept;
+				changed = true;
+			}
+		}
+		if (changed) await writeFile(wsPath, JSON.stringify(raw, null, 2));
+	} catch {}
+	return {
+		deleted: deletedIds.length,
+		failed
+	};
 }
 async function buildExport(ids, projectKey, includeAttachments, includeWorkspace) {
 	await mkdir(EXPORT_ROOT, { recursive: true });
@@ -1324,9 +1365,11 @@ function makeConversationRoutes() {
 				}
 				try {
 					const body = await readJson(req);
+					const r = await deleteConversations(Array.isArray(body.sessionIds) ? body.sessionIds.filter((x) => typeof x === "string") : []);
 					json(res, 200, {
 						ok: true,
-						deleted: await deleteConversations(Array.isArray(body.sessionIds) ? body.sessionIds.filter((x) => typeof x === "string") : [])
+						deleted: r.deleted,
+						failed: r.failed
 					});
 				} catch (e) {
 					json(res, 400, {

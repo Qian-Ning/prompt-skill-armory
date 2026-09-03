@@ -539,15 +539,22 @@ window.__ModuleLoader__.load({
 			}
 		}
 		async function downloadExport(name) {
-			const blob = await (await fetch(`/api/armory/export/${name}`)).blob();
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement("a");
-			a.href = url;
-			a.download = name;
-			document.body.appendChild(a);
-			a.click();
-			a.remove();
-			setTimeout(() => URL.revokeObjectURL(url), 1e3);
+			try {
+				const r = await fetch(`/api/armory/export/${name}`);
+				if (!r.ok) return false;
+				const blob = await r.blob();
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement("a");
+				a.href = url;
+				a.download = name;
+				document.body.appendChild(a);
+				a.click();
+				a.remove();
+				setTimeout(() => URL.revokeObjectURL(url), 1e3);
+				return true;
+			} catch {
+				return false;
+			}
 		}
 		async function deleteConversations(ids) {
 			try {
@@ -556,7 +563,11 @@ window.__ModuleLoader__.load({
 					headers: { "content-type": "application/json" },
 					body: JSON.stringify({ sessionIds: ids })
 				})).json();
-				return b.ok ? b.deleted ?? 0 : null;
+				if (!b.ok) return null;
+				return {
+					deleted: b.deleted ?? 0,
+					failed: Array.isArray(b.failed) ? b.failed : []
+				};
 			} catch {
 				return null;
 			}
@@ -947,7 +958,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.9.6";
+		const ARMORY_VERSION = "0.9.7";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;
@@ -992,9 +1003,13 @@ window.__ModuleLoader__.load({
 			});
 			const maxSteps = Math.max(...byDay.map((d) => d.steps), 1);
 			const maxTokens = Math.max(...byDay.map((d) => d.outputTokens), ...byDay.map((d) => d.inputTokens), ...byDay.map((d) => d.cacheReadTokens), ...byDay.map((d) => d.cacheWriteTokens), 1);
+			const logBase = Math.max(Math.log10(maxTokens), 1);
 			const x = (i) => PAD.l + (n === 1 ? iw / 2 : i / (n - 1) * iw);
 			const ySteps = (v) => PAD.t + ih - v / maxSteps * ih;
-			const yTok = (v) => PAD.t + ih - v / maxTokens * ih;
+			const yTok = (v) => {
+				const vv = Math.max(v, 1);
+				return PAD.t + ih - Math.log10(vv) / logBase * ih;
+			};
 			const pathSteps = byDay.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${ySteps(d.steps).toFixed(1)}`).join(" ");
 			const pathOut = byDay.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${yTok(d.outputTokens).toFixed(1)}`).join(" ");
 			const pathIn = byDay.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${yTok(d.inputTokens).toFixed(1)}`).join(" ");
@@ -1004,7 +1019,7 @@ window.__ModuleLoader__.load({
 				.5,
 				.75,
 				1
-			].map((f) => f * maxTokens);
+			].map((f) => Math.pow(10, f * logBase));
 			const niceToken = (v) => {
 				if (v >= 1e6) return `${(v / 1e6).toFixed(v % 1e6 === 0 ? 0 : 1)}M`;
 				if (v >= 1e3) return `${(v / 1e3).toFixed(v % 1e3 === 0 ? 0 : 1)}k`;
@@ -1052,13 +1067,13 @@ window.__ModuleLoader__.load({
 								children: g.label
 							})] }, i)),
 							tokTicks.map((v, i) => {
-								const yy = PAD.t + ih - v / maxTokens * ih;
+								const yy = yTok(v);
 								return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
 									x: W - PAD.r + 6,
 									y: yy + 3,
 									fontSize: "9",
 									fill: i === 4 ? "#3fb950" : "#8b949e",
-									children: i === 0 ? "0" : niceToken(v)
+									children: niceToken(v)
 								}, i);
 							}),
 							byDay.map((d, i) => {
@@ -1382,15 +1397,19 @@ window.__ModuleLoader__.load({
 			const doExportChat = async () => {
 				setChatBusy(true);
 				setChatMsg("");
-				const name = await exportConversations([...chatSelected]);
-				if (name === null) {
+				try {
+					const name = await exportConversations([...chatSelected]);
+					if (name === null) {
+						setChatMsg("导出失败");
+						return;
+					}
+					const ok = await downloadExport(name);
+					setChatMsg(ok ? `已导出 ${name}` : "导出失败：下载未完成");
+				} catch {
 					setChatMsg("导出失败");
+				} finally {
 					setChatBusy(false);
-					return;
 				}
-				await downloadExport(name);
-				setChatMsg(`已导出 ${name}`);
-				setChatBusy(false);
 			};
 			const doExportProject = async () => {
 				const key = chatProject.trim();
@@ -1400,15 +1419,19 @@ window.__ModuleLoader__.load({
 				}
 				setChatBusy(true);
 				setChatMsg("");
-				const name = await exportConversations([], key);
-				if (name === null) {
+				try {
+					const name = await exportConversations([], key);
+					if (name === null) {
+						setChatMsg("导出失败");
+						return;
+					}
+					const ok = await downloadExport(name);
+					setChatMsg(ok ? `已导出整个项目 ${key} → ${name}` : "导出失败：下载未完成");
+				} catch {
 					setChatMsg("导出失败");
+				} finally {
 					setChatBusy(false);
-					return;
 				}
-				await downloadExport(name);
-				setChatMsg(`已导出整个项目 ${key} → ${name}`);
-				setChatBusy(false);
 			};
 			const doUpdate = async () => {
 				setUpdating(true);
@@ -1421,13 +1444,18 @@ window.__ModuleLoader__.load({
 				if (file === void 0) return;
 				setChatBusy(true);
 				setChatMsg("");
-				const n = await importConversations(file, chatTarget.trim() || void 0);
-				setChatMsg(n === null ? "导入失败" : `已导入 ${n} 个对话，重启客户端后生效`);
-				if (n !== null) {
-					refreshSessions();
-					await reloadChat();
+				try {
+					const n = await importConversations(file, chatTarget.trim() || void 0);
+					setChatMsg(n === null ? "导入失败" : `已导入 ${n} 个对话，重启客户端后生效`);
+					if (n !== null) {
+						refreshSessions();
+						await reloadChat();
+					}
+				} catch {
+					setChatMsg("导入失败");
+				} finally {
+					setChatBusy(false);
 				}
-				setChatBusy(false);
 			};
 			const doDeleteChat = async () => {
 				const ids = [...chatSelected];
@@ -1435,17 +1463,22 @@ window.__ModuleLoader__.load({
 				if (!window.confirm(`确定删除选中的 ${ids.length} 个对话吗？此操作不可恢复。`)) return;
 				setChatBusy(true);
 				setChatMsg("");
-				const n = await deleteConversations(ids);
-				if (n === null) {
+				try {
+					const r = await deleteConversations(ids);
+					if (r === null) {
+						setChatMsg("删除失败");
+						return;
+					}
+					setChatSelected(/* @__PURE__ */ new Set());
+					const failMsg = r.failed.length > 0 ? `；${r.failed.length} 个删除失败（文件可能被占用，可稍后重试）` : "";
+					setChatMsg(`已删除 ${r.deleted} 个对话${failMsg}`);
+					refreshSessions();
+					await reloadChat();
+				} catch {
 					setChatMsg("删除失败");
+				} finally {
 					setChatBusy(false);
-					return;
 				}
-				setChatSelected(/* @__PURE__ */ new Set());
-				setChatMsg(`已删除 ${n} 个对话`);
-				refreshSessions();
-				await reloadChat();
-				setChatBusy(false);
 			};
 			(0, react.useEffect)(() => {
 				const snap = backgroundClient.getSnapshot();
@@ -2577,10 +2610,14 @@ window.__ModuleLoader__.load({
 												children: "导出整个项目"
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-												style: CSS.input,
+												style: {
+													...CSS.input,
+													maxWidth: "220px",
+													textOverflow: "ellipsis"
+												},
 												value: chatProject,
 												onChange: (e) => setChatProject(e.target.value),
-												disabled: chatBusy || chatProjects.length === 0,
+												disabled: chatProjects.length === 0,
 												title: "选择要整体导出的项目工作区",
 												children: [chatProjects.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
 													value: "",
@@ -2671,8 +2708,13 @@ window.__ModuleLoader__.load({
 												style: {
 													...CSS.badge,
 													...CSS.badgeDisabled,
-													flex: "none"
+													flex: "none",
+													maxWidth: "150px",
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													whiteSpace: "nowrap"
 												},
+												title: row.cwd || row.projectKey,
 												children: row.cwd ? row.cwd.split(/[\\/]/).filter(Boolean).pop() : row.projectKey
 											})]
 										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {

@@ -467,19 +467,26 @@ function resolveSession(key: string, id: string): string | undefined {
   return existsSync(join(dir, 'session.jsonl.zstd')) ? dir : undefined
 }
 
-/** Delete one or more conversations: remove the session dir + the index entry. */
-async function deleteConversations(ids: string[]): Promise<number> {
-  let count = 0
-  // 1) Remove session directories on disk.
+/** Delete one or more conversations: remove the session dir + index entries.
+ * Returns per-session results so the UI can report which (if any) failed —
+ * a locked file (DSH holding it open) must not abort the whole batch. */
+async function deleteConversations(ids: string[]): Promise<{ deleted: number; failed: string[] }> {
+  const deletedIds: string[] = []
+  const failed: string[] = []
+  // 1) Remove session directories on disk (resilient: one bad rm doesn't kill the batch).
   for (const full of ids) {
     const slash = full.indexOf('/')
-    if (slash <= 0) continue
+    if (slash <= 0) { failed.push(full); continue }
     const key = full.slice(0, slash); const id = full.slice(slash + 1)
     const dir = resolveSession(key, id)
-    if (dir === undefined) continue
-    await rm(dir, { recursive: true, force: true })
-    count++
+    if (dir === undefined) { failed.push(full); continue }
+    try {
+      await rm(dir, { recursive: true, force: true })
+      deletedIds.push(id)
+    } catch { failed.push(full) }
   }
+  if (deletedIds.length === 0) return { deleted: 0, failed }
+
   // 2) Drop the matching entries from the session project cache.
   try {
     const indexPath = join(STORAGES_ROOT, 'session_projcache.json')
@@ -489,14 +496,38 @@ async function deleteConversations(ids: string[]): Promise<number> {
     const sessions = raw.tables?.sessions
     if (sessions !== undefined) {
       let changed = false
-      for (const full of ids) {
-        const id = full.slice(full.indexOf('/') + 1)
+      for (const id of deletedIds) {
         if (id in sessions) { delete sessions[id]; changed = true }
       }
       if (changed) await writeFile(indexPath, JSON.stringify(raw, null, 2))
     }
   } catch { /* cache update is best-effort */ }
-  return count
+
+  // 3) Scrub deleted session ids from the workspace registry so DSH does not
+  // resurrect ghost sessions on its next list refresh.
+  try {
+    const wsPath = join(STORAGES_ROOT, 'workspace.json')
+    const raw = JSON.parse(await readFile(wsPath, 'utf8')) as {
+      global?: { workspaceIds?: string[]; archivedSessionIds?: string[] }
+      tables?: { workspaces?: Record<string, { path: string; title: string; sessionIds: string[]; createdAt: string; updatedAt: string }> }
+    }
+    const dead = new Set(deletedIds)
+    let changed = false
+    const workspaces = raw.tables?.workspaces
+    if (workspaces !== undefined) {
+      for (const w of Object.values(workspaces)) {
+        const kept = w.sessionIds.filter((sid) => !dead.has(sid))
+        if (kept.length !== w.sessionIds.length) { w.sessionIds = kept; changed = true }
+      }
+    }
+    if (raw.global?.archivedSessionIds !== undefined) {
+      const kept = raw.global.archivedSessionIds.filter((sid) => !dead.has(sid))
+      if (kept.length !== raw.global.archivedSessionIds.length) { raw.global.archivedSessionIds = kept; changed = true }
+    }
+    if (changed) await writeFile(wsPath, JSON.stringify(raw, null, 2))
+  } catch { /* best-effort */ }
+
+  return { deleted: deletedIds.length, failed }
 }
 
 async function buildExport(ids: string[], projectKey: string | undefined, includeAttachments: boolean, includeWorkspace: boolean): Promise<{ zipPath: string; name: string }> {
@@ -787,8 +818,8 @@ export function makeConversationRoutes(): WebRoute[] {
         try {
           const body = await readJson(req)
           const ids = Array.isArray(body.sessionIds) ? body.sessionIds.filter((x): x is string => typeof x === 'string') : []
-          const n = await deleteConversations(ids)
-          json(res, 200, { ok: true, deleted: n })
+          const r = await deleteConversations(ids)
+          json(res, 200, { ok: true, deleted: r.deleted, failed: r.failed })
         } catch (e) { json(res, 400, { ok: false, error: e instanceof Error ? e.message : String(e) }) }
       },
     },
