@@ -97,6 +97,43 @@ async function readTitleIndex(): Promise<Map<string, { title: string; cwd: strin
   return out
 }
 
+/** One durable workspace record from the DSH workspace registry. */
+interface WorkspaceRecord {
+  path: string
+  title: string
+  sessionIds: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+/** Read the full workspace registry (`~/.dsh/storages/workspace.json`). */
+async function readWorkspaceRegistry(): Promise<Record<string, WorkspaceRecord>> {
+  try {
+    const raw = JSON.parse(await readFile(join(STORAGES_ROOT, 'workspace.json'), 'utf8')) as {
+      tables?: { workspaces?: Record<string, WorkspaceRecord> }
+    }
+    return raw.tables?.workspaces ?? {}
+  } catch { return {} }
+}
+
+/** Read the full session identity map (createdAt + cwd) from the projcache. */
+async function readSessionIdentities(): Promise<Map<string, { createdAt?: number; cwd?: string }>> {
+  const out = new Map<string, { createdAt?: number; cwd?: string }>()
+  try {
+    const raw = JSON.parse(await readFile(join(STORAGES_ROOT, 'session_projcache.json'), 'utf8')) as {
+      tables?: { sessions?: Record<string, { identity?: { createdAt?: number; cwd?: string } }> }
+    }
+    const sessions = raw.tables?.sessions ?? {}
+    for (const [id, v] of Object.entries(sessions)) {
+      out.set(id, {
+        createdAt: typeof v.identity?.createdAt === 'number' ? v.identity.createdAt : undefined,
+        cwd: typeof v.identity?.cwd === 'string' ? v.identity.cwd : undefined,
+      })
+    }
+  } catch { /* no cache yet */ }
+  return out
+}
+
 const ZSTD_MAGIC = [0x28, 0xb5, 0x2f, 0xfd]
 
 /** Decompress the first few zstd frames of a session log (the title lives early). */
@@ -398,38 +435,164 @@ async function deleteConversations(ids: string[]): Promise<number> {
   return count
 }
 
-async function buildExport(ids: string[], includeAttachments: boolean, includeWorkspace: boolean): Promise<{ zipPath: string; name: string }> {
+async function buildExport(ids: string[], projectKey: string | undefined, includeAttachments: boolean, includeWorkspace: boolean): Promise<{ zipPath: string; name: string }> {
   await mkdir(EXPORT_ROOT, { recursive: true })
   const tmp = join(EXPORT_ROOT, 'staging-' + randomBytes(6).toString('hex'))
   const zip = join(EXPORT_ROOT, `armory-chat-${Date.now()}.zip`)
   await mkdir(tmp, { recursive: true })
 
+  // Whole-project mode: every session under one projectKey. Selected mode:
+  // the explicit `<projectKey>/<sessionId>` ids. Both funnel into `picked`.
+  const picked: { key: string; id: string }[] = []
+  if (projectKey !== undefined && projectKey !== '') {
+    const pdir = join(SESSIONS_ROOT, projectKey)
+    const sessions = await readdir(pdir).catch(() => [] as string[])
+    for (const id of sessions) {
+      if (!id.startsWith('session-')) continue
+      const s = await stat(join(pdir, id)).catch(() => undefined)
+      if (s !== undefined && s.isDirectory()) picked.push({ key: projectKey, id })
+    }
+  } else {
+    for (const full of ids) {
+      const slash = full.indexOf('/')
+      if (slash <= 0) continue
+      picked.push({ key: full.slice(0, slash), id: full.slice(slash + 1) })
+    }
+  }
+
   const projectKeys = new Set<string>()
-  for (const full of ids) {
-    const slash = full.indexOf('/')
-    if (slash <= 0) continue
-    const key = full.slice(0, slash); const id = full.slice(slash + 1)
+  const exportedIds: string[] = []
+  for (const { key, id } of picked) {
     const src = resolveSession(key, id)
     if (src === undefined) continue
     const dst = join(tmp, 'sessions', key, id)
     await mkdir(dst, { recursive: true })
     await cp(src, dst, { recursive: true })
     projectKeys.add(key)
+    exportedIds.push(id)
   }
 
-  // 隐私优先：绝不打包全局附件/工作区——zip 只含勾选的会话与 manifest。
+  // 隐私优先：绝不打包全局附件/工作区——zip 只含选中的会话与 manifest。
+  // 但工作区注册表条目（title/path）与每个会话的 identity（createdAt/cwd）
+  // 会随 manifest 带走，导入端据此重建工作区名（避免「未命名」）。
   void includeAttachments; void includeWorkspace
-  await writeFile(join(tmp, 'manifest.json'), JSON.stringify({ format: 1, exportedAt: Date.now(), projectKeys: [...projectKeys] }))
+  const registry = await readWorkspaceRegistry()
+  const identities = await readSessionIdentities()
+  const titles = await readTitleIndex()
+  const idSet = new Set(exportedIds)
+  const workspaces: Record<string, WorkspaceRecord> = {}
+  for (const [wid, rec] of Object.entries(registry)) {
+    if (rec.sessionIds.some((sid) => idSet.has(sid))) workspaces[wid] = rec
+  }
+  const sessions: Record<string, { createdAt?: number; cwd?: string; title?: string }> = {}
+  for (const id of exportedIds) {
+    const ident = identities.get(id)
+    sessions[id] = { createdAt: ident?.createdAt, cwd: ident?.cwd, title: titles.get(id)?.title }
+  }
+  await writeFile(join(tmp, 'manifest.json'), JSON.stringify({
+    format: 2,
+    exportedAt: Date.now(),
+    projectKeys: [...projectKeys],
+    workspaces,
+    sessions,
+  }, null, 2))
 
   await ps(`Compress-Archive -Path "${join(tmp, '*')}" -DestinationPath "${zip}" -Force`)
   await rm(tmp, { recursive: true, force: true })
   return { zipPath: zip, name: basename(zip) }
 }
 
+/** Manifest payload embedded in an Armory export zip (format 2). */
+interface ExportManifest {
+  format?: number
+  exportedAt?: number
+  projectKeys?: string[]
+  workspaces?: Record<string, WorkspaceRecord>
+  sessions?: Record<string, { createdAt?: number; cwd?: string; title?: string }>
+}
+
+/** Merge the exported workspaces into the local registry, returning how many were created/updated. */
+async function mergeWorkspaceRegistry(manifest: ExportManifest): Promise<number> {
+  const indexPath = join(STORAGES_ROOT, 'workspace.json')
+  const raw = JSON.parse(await readFile(indexPath, 'utf8').catch(() => '{}')) as {
+    unit?: unknown
+    global?: { initialized?: boolean; workspaceIds?: string[]; archivedSessionIds?: string[] }
+    tables?: { workspaces?: Record<string, WorkspaceRecord> }
+  }
+  const tables = raw.tables ?? {}
+  const workspaces = tables.workspaces ?? {}
+  const ids = raw.global?.workspaceIds ?? []
+  let changed = false
+
+  for (const [wid, rec] of Object.entries(manifest.workspaces ?? {})) {
+    // Find an existing local workspace owning the same path (source machine
+    // paths differ, so match by exact path first; the source id is kept when
+    // the path was already imported before).
+    let existingId: string | undefined
+    for (const [id, w] of Object.entries(workspaces)) {
+      if (w.path === rec.path) { existingId = id; break }
+    }
+    const targetId = existingId ?? wid
+    const prior = workspaces[targetId]
+    const merged: WorkspaceRecord = {
+      path: rec.path,
+      title: rec.title,
+      sessionIds: [...new Set([...(prior?.sessionIds ?? []), ...rec.sessionIds])],
+      createdAt: prior?.createdAt ?? rec.createdAt,
+      updatedAt: new Date().toISOString(),
+    }
+    // Re-key imported sessions to their local project key (if remapped) —
+    // session ids are stable across machines, so nothing to rewrite.
+    workspaces[targetId] = merged
+    if (!ids.includes(targetId)) ids.push(targetId)
+    changed = true
+  }
+
+  if (changed) {
+    raw.tables = { ...tables, workspaces }
+    raw.global = { initialized: true, workspaceIds: ids, archivedSessionIds: raw.global?.archivedSessionIds ?? [] }
+    await writeFile(indexPath, JSON.stringify(raw, null, 2))
+  }
+  return changed ? Object.keys(manifest.workspaces ?? {}).length : 0
+}
+
+/** Write session identity + title rows back into the projcache so workspace
+ * names and titles survive an import (avoids the "未命名" fallback). */
+async function mergeSessionCache(manifest: ExportManifest): Promise<void> {
+  const sessions = manifest.sessions ?? {}
+  if (Object.keys(sessions).length === 0) return
+  const indexPath = join(STORAGES_ROOT, 'session_projcache.json')
+  const raw = JSON.parse(await readFile(indexPath, 'utf8').catch(() => '{}')) as {
+    tables?: { sessions?: Record<string, { identity?: { createdAt?: number; cwd?: string }; rows?: { title?: { val?: string | null } } }> }
+  }
+  const tables = raw.tables ?? {}
+  const rows = tables.sessions ?? {}
+  let changed = false
+  for (const [sid, meta] of Object.entries(sessions)) {
+    const row = rows[sid] ?? {}
+    const identity = row.identity ?? {}
+    if (meta.createdAt !== undefined && identity.createdAt === undefined) { identity.createdAt = meta.createdAt; changed = true }
+    if (meta.cwd !== undefined && meta.cwd !== '' && identity.cwd === undefined) { identity.cwd = meta.cwd; changed = true }
+    const r = row.rows ?? {}
+    if (meta.title !== undefined && meta.title !== '' && (r.title?.val ?? '') === '') { r.title = { val: meta.title }; changed = true }
+    rows[sid] = { identity, rows: r }
+  }
+  if (changed) {
+    raw.tables = { ...tables, sessions: rows }
+    await writeFile(indexPath, JSON.stringify(raw, null, 2))
+  }
+}
+
 async function importArchive(zipPath: string, targetProjectKey: string | undefined): Promise<number> {
   const tmp = join(EXPORT_ROOT, 'import-' + randomBytes(6).toString('hex'))
   await mkdir(tmp, { recursive: true })
   await ps(`Expand-Archive -Path "${zipPath}" -DestinationPath "${tmp}" -Force`)
+
+  // Manifest (format 2) carries workspace registry + session identity rows.
+  let manifest: ExportManifest = {}
+  try {
+    manifest = JSON.parse(await readFile(join(tmp, 'manifest.json'), 'utf8')) as ExportManifest
+  } catch { /* format-1 archives have no manifest metadata */ }
 
   // Merge sessions, remapping the project key when the user supplied a target.
   const sessionsDir = join(tmp, 'sessions')
@@ -456,9 +619,11 @@ async function importArchive(zipPath: string, targetProjectKey: string | undefin
   const att = join(tmp, 'attachments')
   if (existsSync(att)) { await mkdir(ATTACHMENTS_ROOT, { recursive: true }); await cp(att, ATTACHMENTS_ROOT, { recursive: true }) }
 
-  // Merge workspace.
-  const ws = join(tmp, 'storages', 'workspace.json')
-  if (existsSync(ws)) { await mkdir(STORAGES_ROOT, { recursive: true }); await cp(ws, join(STORAGES_ROOT, 'workspace.json'), { force: true }) }
+  // Merge workspace registry + projcache so the project keeps its name.
+  if (manifest.format !== undefined && manifest.format >= 2) {
+    try { await mergeWorkspaceRegistry(manifest) } catch { /* best-effort */ }
+    try { await mergeSessionCache(manifest) } catch { /* best-effort */ }
+  }
 
   await rm(tmp, { recursive: true, force: true })
   return count
@@ -494,9 +659,11 @@ export function makeConversationRoutes(): WebRoute[] {
         try {
           const body = await readJson(req)
           const ids = Array.isArray(body.sessionIds) ? body.sessionIds.filter((x): x is string => typeof x === 'string') : []
+          const projectKey = typeof body.projectKey === 'string' && body.projectKey !== '' ? body.projectKey : undefined
           const includeAttachments = body.includeAttachments !== false
           const includeWorkspace = body.includeWorkspace !== false
-          const r = await buildExport(ids, includeAttachments, includeWorkspace)
+          if (projectKey === undefined && ids.length === 0) { json(res, 400, { ok: false, error: 'empty export' }); return }
+          const r = await buildExport(ids, projectKey, includeAttachments, includeWorkspace)
           json(res, 200, { ok: true, name: r.name })
         } catch (e) { json(res, 400, { ok: false, error: e instanceof Error ? e.message : String(e) }) }
       },

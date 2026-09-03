@@ -17,11 +17,11 @@ export async function listConversations(): Promise<ConversationRow[]> {
   } catch { return [] }
 }
 
-export async function exportConversations(ids: string[]): Promise<string | null> {
+export async function exportConversations(ids: string[], projectKey?: string): Promise<string | null> {
   try {
     const r = await fetch('/api/armory/export', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sessionIds: ids, includeAttachments: false, includeWorkspace: false }),
+      body: JSON.stringify({ sessionIds: ids, projectKey, includeAttachments: false, includeWorkspace: false }),
     })
     const b = (await r.json()) as { ok: boolean; name?: string }
     return b.ok && b.name !== undefined ? b.name : null

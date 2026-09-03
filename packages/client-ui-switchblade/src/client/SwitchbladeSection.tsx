@@ -9,7 +9,7 @@
  * @module @deepseek-ai/dsh-client-ui-switchblade
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, JSX } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SwitchbladeKey } from './locales.ts'
@@ -331,7 +331,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
 type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'chat' | 'stats'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.9.2'
+const ARMORY_VERSION = '0.9.3'
 
 /** Compact duration: 45.2s / 2m42s / 1h05m. */
 function fmtDuration(ms: number): string {
@@ -554,6 +554,7 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
   const [chatRows, setChatRows] = useState<ConversationRow[]>([])
   const [chatSelected, setChatSelected] = useState<Set<string>>(new Set())
   const [chatTarget, setChatTarget] = useState('')
+  const [chatProject, setChatProject] = useState('')
   const [chatBusy, setChatBusy] = useState(false)
   const [chatMsg, setChatMsg] = useState('')
   // Update availability
@@ -581,12 +582,39 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     setChatSelected((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   }
 
+  // Deduplicated project workspaces (projectKey + display name from cwd basename).
+  const chatProjects = useMemo(() => {
+    const byKey = new Map<string, string>()
+    for (const row of chatRows) {
+      const name = row.cwd ? row.cwd.split(/[\\/]/).filter(Boolean).pop() ?? row.projectKey : row.projectKey
+      if (!byKey.has(row.projectKey)) byKey.set(row.projectKey, name)
+    }
+    return [...byKey.entries()].map(([key, name]) => ({ key, name })).sort((a, b) => a.name.localeCompare(b.name))
+  }, [chatRows])
+
+  // Keep the selected project valid as rows load.
+  useEffect(() => {
+    if (chatProject === '' && chatProjects.length > 0) setChatProject(chatProjects[0].key)
+    else if (chatProject !== '' && !chatProjects.some((p) => p.key === chatProject)) setChatProject(chatProjects[0]?.key ?? '')
+  }, [chatProjects, chatProject])
+
   const doExportChat = async (): Promise<void> => {
     setChatBusy(true); setChatMsg('')
     const name = await exportConversations([...chatSelected])
     if (name === null) { setChatMsg('导出失败'); setChatBusy(false); return }
     await downloadExport(name)
     setChatMsg(`已导出 ${name}`)
+    setChatBusy(false)
+  }
+
+  const doExportProject = async (): Promise<void> => {
+    const key = chatProject.trim()
+    if (key === '') { setChatMsg('请先选择项目工作区'); return }
+    setChatBusy(true); setChatMsg('')
+    const name = await exportConversations([], key)
+    if (name === null) { setChatMsg('导出失败'); setChatBusy(false); return }
+    await downloadExport(name)
+    setChatMsg(`已导出整个项目 ${key} → ${name}`)
     setChatBusy(false)
   }
 
@@ -1090,12 +1118,27 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
                 <button style={CSS.actionBtn} onClick={() => void reloadChat()} disabled={chatBusy}>刷新</button>
               </div>
               <div style={{ ...CSS.desc, lineHeight: '1.5' }}>
-                勾选要导出的对话，打成一个 zip；在另一台机器选该 zip 导入即可还原（含附件与工作区）。
+                可导出选中的对话，也可下拉选择某个项目工作区整体导出；导入后项目工作区名会尽量与导出端保持一致。
               </div>
               <div style={CSS.actions}>
                 <button style={CSS.actionBtn} disabled={chatBusy || chatSelected.size === 0} onClick={() => void doExportChat()}>
                   导出选中（{chatSelected.size}）
                 </button>
+                <button style={CSS.actionBtn} disabled={chatBusy || chatProject === ''} onClick={() => void doExportProject()} title="导出该项目工作区下的全部对话，导入后可保留项目名">
+                  导出整个项目
+                </button>
+                <select
+                  style={CSS.input}
+                  value={chatProject}
+                  onChange={(e) => setChatProject(e.target.value)}
+                  disabled={chatBusy || chatProjects.length === 0}
+                  title="选择要整体导出的项目工作区"
+                >
+                  {chatProjects.length === 0 && <option value="">（无项目）</option>}
+                  {chatProjects.map((p) => (
+                    <option key={p.key} value={p.key}>{p.name}（{chatRows.filter((r) => r.projectKey === p.key).length} 个对话）</option>
+                  ))}
+                </select>
                 <button style={{ ...CSS.actionBtn, ...CSS.dangerBtn }} disabled={chatBusy || chatSelected.size === 0} onClick={() => void doDeleteChat()}>
                   删除选中（{chatSelected.size}）
                 </button>

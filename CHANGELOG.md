@@ -6,6 +6,14 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.9.3] - 2026-08
+
+### 新增 · Added
+- 对话导出支持「整个项目工作区」：下拉选择项目后一键导出该项目下的全部对话。
+  Conversation export now supports whole-project workspaces: pick a project and export every conversation under it in one click.
+- 导出包携带工作区注册表（title/path）与每个会话的 identity（createdAt/cwd/title），导入后合并写回 `workspace.json` 与 `session_projcache.json`，项目工作区名不再变成「未命名」，尽量与导出端一致。
+  The export zip now carries the workspace registry (title/path) plus per-session identity (createdAt/cwd/title); import merges them back into `workspace.json` and `session_projcache.json`, so project workspace names survive the move instead of falling back to "unnamed".
+
 ## [0.9.2] - 2026-08
 
 ### 修复 · Fixed

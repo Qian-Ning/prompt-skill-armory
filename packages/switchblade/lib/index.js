@@ -508,6 +508,26 @@ async function readTitleIndex() {
 	} catch {}
 	return out;
 }
+/** Read the full workspace registry (`~/.dsh/storages/workspace.json`). */
+async function readWorkspaceRegistry() {
+	try {
+		return JSON.parse(await readFile(join(STORAGES_ROOT, "workspace.json"), "utf8")).tables?.workspaces ?? {};
+	} catch {
+		return {};
+	}
+}
+/** Read the full session identity map (createdAt + cwd) from the projcache. */
+async function readSessionIdentities() {
+	const out = /* @__PURE__ */ new Map();
+	try {
+		const sessions = JSON.parse(await readFile(join(STORAGES_ROOT, "session_projcache.json"), "utf8")).tables?.sessions ?? {};
+		for (const [id, v] of Object.entries(sessions)) out.set(id, {
+			createdAt: typeof v.identity?.createdAt === "number" ? v.identity.createdAt : void 0,
+			cwd: typeof v.identity?.cwd === "string" ? v.identity.cwd : void 0
+		});
+	} catch {}
+	return out;
+}
 const ZSTD_MAGIC = [
 	40,
 	181,
@@ -846,29 +866,64 @@ async function deleteConversations(ids) {
 	} catch {}
 	return count;
 }
-async function buildExport(ids, includeAttachments, includeWorkspace) {
+async function buildExport(ids, projectKey, includeAttachments, includeWorkspace) {
 	await mkdir(EXPORT_ROOT, { recursive: true });
 	const tmp = join(EXPORT_ROOT, "staging-" + randomBytes(6).toString("hex"));
 	const zip = join(EXPORT_ROOT, `armory-chat-${Date.now()}.zip`);
 	await mkdir(tmp, { recursive: true });
-	const projectKeys = /* @__PURE__ */ new Set();
-	for (const full of ids) {
+	const picked = [];
+	if (projectKey !== void 0 && projectKey !== "") {
+		const pdir = join(SESSIONS_ROOT, projectKey);
+		const sessions = await readdir(pdir).catch(() => []);
+		for (const id of sessions) {
+			if (!id.startsWith("session-")) continue;
+			const s = await stat(join(pdir, id)).catch(() => void 0);
+			if (s !== void 0 && s.isDirectory()) picked.push({
+				key: projectKey,
+				id
+			});
+		}
+	} else for (const full of ids) {
 		const slash = full.indexOf("/");
 		if (slash <= 0) continue;
-		const key = full.slice(0, slash);
-		const id = full.slice(slash + 1);
+		picked.push({
+			key: full.slice(0, slash),
+			id: full.slice(slash + 1)
+		});
+	}
+	const projectKeys = /* @__PURE__ */ new Set();
+	const exportedIds = [];
+	for (const { key, id } of picked) {
 		const src = resolveSession(key, id);
 		if (src === void 0) continue;
 		const dst = join(tmp, "sessions", key, id);
 		await mkdir(dst, { recursive: true });
 		await cp(src, dst, { recursive: true });
 		projectKeys.add(key);
+		exportedIds.push(id);
+	}
+	const registry = await readWorkspaceRegistry();
+	const identities = await readSessionIdentities();
+	const titles = await readTitleIndex();
+	const idSet = new Set(exportedIds);
+	const workspaces = {};
+	for (const [wid, rec] of Object.entries(registry)) if (rec.sessionIds.some((sid) => idSet.has(sid))) workspaces[wid] = rec;
+	const sessions = {};
+	for (const id of exportedIds) {
+		const ident = identities.get(id);
+		sessions[id] = {
+			createdAt: ident?.createdAt,
+			cwd: ident?.cwd,
+			title: titles.get(id)?.title
+		};
 	}
 	await writeFile(join(tmp, "manifest.json"), JSON.stringify({
-		format: 1,
+		format: 2,
 		exportedAt: Date.now(),
-		projectKeys: [...projectKeys]
-	}));
+		projectKeys: [...projectKeys],
+		workspaces,
+		sessions
+	}, null, 2));
 	await ps(`Compress-Archive -Path "${join(tmp, "*")}" -DestinationPath "${zip}" -Force`);
 	await rm(tmp, {
 		recursive: true,
@@ -879,10 +934,93 @@ async function buildExport(ids, includeAttachments, includeWorkspace) {
 		name: basename(zip)
 	};
 }
+/** Merge the exported workspaces into the local registry, returning how many were created/updated. */
+async function mergeWorkspaceRegistry(manifest) {
+	const indexPath = join(STORAGES_ROOT, "workspace.json");
+	const raw = JSON.parse(await readFile(indexPath, "utf8").catch(() => "{}"));
+	const tables = raw.tables ?? {};
+	const workspaces = tables.workspaces ?? {};
+	const ids = raw.global?.workspaceIds ?? [];
+	let changed = false;
+	for (const [wid, rec] of Object.entries(manifest.workspaces ?? {})) {
+		let existingId;
+		for (const [id, w] of Object.entries(workspaces)) if (w.path === rec.path) {
+			existingId = id;
+			break;
+		}
+		const targetId = existingId ?? wid;
+		const prior = workspaces[targetId];
+		workspaces[targetId] = {
+			path: rec.path,
+			title: rec.title,
+			sessionIds: [.../* @__PURE__ */ new Set([...prior?.sessionIds ?? [], ...rec.sessionIds])],
+			createdAt: prior?.createdAt ?? rec.createdAt,
+			updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+		};
+		if (!ids.includes(targetId)) ids.push(targetId);
+		changed = true;
+	}
+	if (changed) {
+		raw.tables = {
+			...tables,
+			workspaces
+		};
+		raw.global = {
+			initialized: true,
+			workspaceIds: ids,
+			archivedSessionIds: raw.global?.archivedSessionIds ?? []
+		};
+		await writeFile(indexPath, JSON.stringify(raw, null, 2));
+	}
+	return changed ? Object.keys(manifest.workspaces ?? {}).length : 0;
+}
+/** Write session identity + title rows back into the projcache so workspace
+* names and titles survive an import (avoids the "未命名" fallback). */
+async function mergeSessionCache(manifest) {
+	const sessions = manifest.sessions ?? {};
+	if (Object.keys(sessions).length === 0) return;
+	const indexPath = join(STORAGES_ROOT, "session_projcache.json");
+	const raw = JSON.parse(await readFile(indexPath, "utf8").catch(() => "{}"));
+	const tables = raw.tables ?? {};
+	const rows = tables.sessions ?? {};
+	let changed = false;
+	for (const [sid, meta] of Object.entries(sessions)) {
+		const row = rows[sid] ?? {};
+		const identity = row.identity ?? {};
+		if (meta.createdAt !== void 0 && identity.createdAt === void 0) {
+			identity.createdAt = meta.createdAt;
+			changed = true;
+		}
+		if (meta.cwd !== void 0 && meta.cwd !== "" && identity.cwd === void 0) {
+			identity.cwd = meta.cwd;
+			changed = true;
+		}
+		const r = row.rows ?? {};
+		if (meta.title !== void 0 && meta.title !== "" && (r.title?.val ?? "") === "") {
+			r.title = { val: meta.title };
+			changed = true;
+		}
+		rows[sid] = {
+			identity,
+			rows: r
+		};
+	}
+	if (changed) {
+		raw.tables = {
+			...tables,
+			sessions: rows
+		};
+		await writeFile(indexPath, JSON.stringify(raw, null, 2));
+	}
+}
 async function importArchive(zipPath, targetProjectKey) {
 	const tmp = join(EXPORT_ROOT, "import-" + randomBytes(6).toString("hex"));
 	await mkdir(tmp, { recursive: true });
 	await ps(`Expand-Archive -Path "${zipPath}" -DestinationPath "${tmp}" -Force`);
+	let manifest = {};
+	try {
+		manifest = JSON.parse(await readFile(join(tmp, "manifest.json"), "utf8"));
+	} catch {}
 	const sessionsDir = join(tmp, "sessions");
 	let count = 0;
 	if (existsSync(sessionsDir)) {
@@ -907,10 +1045,13 @@ async function importArchive(zipPath, targetProjectKey) {
 		await mkdir(ATTACHMENTS_ROOT, { recursive: true });
 		await cp(att, ATTACHMENTS_ROOT, { recursive: true });
 	}
-	const ws = join(tmp, "storages", "workspace.json");
-	if (existsSync(ws)) {
-		await mkdir(STORAGES_ROOT, { recursive: true });
-		await cp(ws, join(STORAGES_ROOT, "workspace.json"), { force: true });
+	if (manifest.format !== void 0 && manifest.format >= 2) {
+		try {
+			await mergeWorkspaceRegistry(manifest);
+		} catch {}
+		try {
+			await mergeSessionCache(manifest);
+		} catch {}
 	}
 	await rm(tmp, {
 		recursive: true,
@@ -979,9 +1120,20 @@ function makeConversationRoutes() {
 				}
 				try {
 					const body = await readJson(req);
+					const ids = Array.isArray(body.sessionIds) ? body.sessionIds.filter((x) => typeof x === "string") : [];
+					const projectKey = typeof body.projectKey === "string" && body.projectKey !== "" ? body.projectKey : void 0;
+					const includeAttachments = body.includeAttachments !== false;
+					const includeWorkspace = body.includeWorkspace !== false;
+					if (projectKey === void 0 && ids.length === 0) {
+						json(res, 400, {
+							ok: false,
+							error: "empty export"
+						});
+						return;
+					}
 					json(res, 200, {
 						ok: true,
-						name: (await buildExport(Array.isArray(body.sessionIds) ? body.sessionIds.filter((x) => typeof x === "string") : [], body.includeAttachments !== false, body.includeWorkspace !== false)).name
+						name: (await buildExport(ids, projectKey, includeAttachments, includeWorkspace)).name
 					});
 				} catch (e) {
 					json(res, 400, {

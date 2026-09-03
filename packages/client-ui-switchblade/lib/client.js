@@ -521,13 +521,14 @@ window.__ModuleLoader__.load({
 				return [];
 			}
 		}
-		async function exportConversations(ids) {
+		async function exportConversations(ids, projectKey) {
 			try {
 				const b = await (await fetch("/api/armory/export", {
 					method: "POST",
 					headers: { "content-type": "application/json" },
 					body: JSON.stringify({
 						sessionIds: ids,
+						projectKey,
 						includeAttachments: false,
 						includeWorkspace: false
 					})
@@ -946,7 +947,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.9.2";
+		const ARMORY_VERSION = "0.9.3";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;
@@ -1278,6 +1279,7 @@ window.__ModuleLoader__.load({
 			const [chatRows, setChatRows] = (0, react.useState)([]);
 			const [chatSelected, setChatSelected] = (0, react.useState)(/* @__PURE__ */ new Set());
 			const [chatTarget, setChatTarget] = (0, react.useState)("");
+			const [chatProject, setChatProject] = (0, react.useState)("");
 			const [chatBusy, setChatBusy] = (0, react.useState)(false);
 			const [chatMsg, setChatMsg] = (0, react.useState)("");
 			const [latestVer, setLatestVer] = (0, react.useState)("");
@@ -1311,6 +1313,21 @@ window.__ModuleLoader__.load({
 					return n;
 				});
 			};
+			const chatProjects = (0, react.useMemo)(() => {
+				const byKey = /* @__PURE__ */ new Map();
+				for (const row of chatRows) {
+					const name = row.cwd ? row.cwd.split(/[\\/]/).filter(Boolean).pop() ?? row.projectKey : row.projectKey;
+					if (!byKey.has(row.projectKey)) byKey.set(row.projectKey, name);
+				}
+				return [...byKey.entries()].map(([key, name]) => ({
+					key,
+					name
+				})).sort((a, b) => a.name.localeCompare(b.name));
+			}, [chatRows]);
+			(0, react.useEffect)(() => {
+				if (chatProject === "" && chatProjects.length > 0) setChatProject(chatProjects[0].key);
+				else if (chatProject !== "" && !chatProjects.some((p) => p.key === chatProject)) setChatProject(chatProjects[0]?.key ?? "");
+			}, [chatProjects, chatProject]);
 			const doExportChat = async () => {
 				setChatBusy(true);
 				setChatMsg("");
@@ -1322,6 +1339,24 @@ window.__ModuleLoader__.load({
 				}
 				await downloadExport(name);
 				setChatMsg(`已导出 ${name}`);
+				setChatBusy(false);
+			};
+			const doExportProject = async () => {
+				const key = chatProject.trim();
+				if (key === "") {
+					setChatMsg("请先选择项目工作区");
+					return;
+				}
+				setChatBusy(true);
+				setChatMsg("");
+				const name = await exportConversations([], key);
+				if (name === null) {
+					setChatMsg("导出失败");
+					setChatBusy(false);
+					return;
+				}
+				await downloadExport(name);
+				setChatMsg(`已导出整个项目 ${key} → ${name}`);
 				setChatBusy(false);
 			};
 			const doUpdate = async () => {
@@ -2468,7 +2503,7 @@ window.__ModuleLoader__.load({
 											...CSS.desc,
 											lineHeight: "1.5"
 										},
-										children: "勾选要导出的对话，打成一个 zip；在另一台机器选该 zip 导入即可还原（含附件与工作区）。"
+										children: "可导出选中的对话，也可下拉选择某个项目工作区整体导出；导入后项目工作区名会尽量与导出端保持一致。"
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										style: CSS.actions,
@@ -2482,6 +2517,32 @@ window.__ModuleLoader__.load({
 													chatSelected.size,
 													"）"
 												]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												style: CSS.actionBtn,
+												disabled: chatBusy || chatProject === "",
+												onClick: () => void doExportProject(),
+												title: "导出该项目工作区下的全部对话，导入后可保留项目名",
+												children: "导出整个项目"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+												style: CSS.input,
+												value: chatProject,
+												onChange: (e) => setChatProject(e.target.value),
+												disabled: chatBusy || chatProjects.length === 0,
+												title: "选择要整体导出的项目工作区",
+												children: [chatProjects.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+													value: "",
+													children: "（无项目）"
+												}), chatProjects.map((p) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+													value: p.key,
+													children: [
+														p.name,
+														"（",
+														chatRows.filter((r) => r.projectKey === p.key).length,
+														" 个对话）"
+													]
+												}, p.key))]
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 												style: {
