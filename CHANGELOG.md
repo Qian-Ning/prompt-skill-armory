@@ -6,6 +6,14 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.9.2] - 2026-08
+
+### 修复 · Fixed
+- 对话导出仅包含勾选的会话（不再打包全局附件/工作区，避免泄露其他内容）。
+  Conversation export now includes only the selected sessions (global attachments/workspace are no longer bundled, preventing leakage).
+- 更新提示并入标题版本号旁（移除独立横幅）。
+  The update prompt now sits next to the version badge in the header (standalone banner removed).
+
 ## [0.9.1] - 2026-08
 
 ### 修复 · Fixed

@@ -528,8 +528,8 @@ window.__ModuleLoader__.load({
 					headers: { "content-type": "application/json" },
 					body: JSON.stringify({
 						sessionIds: ids,
-						includeAttachments: true,
-						includeWorkspace: true
+						includeAttachments: false,
+						includeWorkspace: false
 					})
 				})).json();
 				return b.ok && b.name !== void 0 ? b.name : null;
@@ -946,7 +946,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.9.1";
+		const ARMORY_VERSION = "0.9.2";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;
@@ -1564,6 +1564,31 @@ window.__ModuleLoader__.load({
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									style: CSS.versionBadge,
 									children: ["v", ARMORY_VERSION]
+								}),
+								latestVer !== "" && isOlder(ARMORY_VERSION, latestVer) && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									style: {
+										display: "inline-flex",
+										alignItems: "center",
+										gap: "6px",
+										marginLeft: "8px"
+									},
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										style: {
+											...CSS.actionBtn,
+											...CSS.badgeEnabled,
+											fontSize: "11px",
+											padding: "2px 8px"
+										},
+										disabled: updating,
+										onClick: () => void doUpdate(),
+										children: updating ? "更新中…" : `↑ v${latestVer} 更新`
+									}), updateMsg !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										style: {
+											...CSS.hint,
+											whiteSpace: "nowrap"
+										},
+										children: updateMsg.slice(0, 60)
+									})]
 								})
 							]
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
@@ -1579,47 +1604,6 @@ window.__ModuleLoader__.load({
 							t("loadFailed"),
 							": ",
 							state.message
-						]
-					}),
-					latestVer !== "" && isOlder(ARMORY_VERSION, latestVer) && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						style: {
-							display: "flex",
-							alignItems: "center",
-							gap: "10px",
-							padding: "8px 12px",
-							marginBottom: "10px",
-							borderRadius: "8px",
-							border: "1px solid #58a6ff",
-							background: "rgba(88,166,255,.08)"
-						},
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-								style: {
-									fontSize: "12px",
-									color: "#58a6ff",
-									flex: 1
-								},
-								children: [
-									"有新版本 v",
-									latestVer,
-									"（当前 v",
-									ARMORY_VERSION,
-									"）"
-								]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								style: {
-									...CSS.actionBtn,
-									...CSS.badgeEnabled
-								},
-								disabled: updating,
-								onClick: () => void doUpdate(),
-								children: updating ? "更新中…" : "一键更新"
-							}),
-							updateMsg !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								style: { ...CSS.hint },
-								children: updateMsg
-							})
 						]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {

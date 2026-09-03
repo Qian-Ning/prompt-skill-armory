@@ -331,7 +331,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
 type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'chat' | 'stats'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.9.1'
+const ARMORY_VERSION = '0.9.2'
 
 /** Compact duration: 45.2s / 2m42s / 1h05m. */
 function fmtDuration(ms: number): string {
@@ -782,19 +782,19 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
         <div style={CSS.title}>
           <BookIcon size={16} /> <span style={CSS.titleAccent}>Armory</span>
           <span style={CSS.versionBadge}>v{ARMORY_VERSION}</span>
+          {latestVer !== '' && isOlder(ARMORY_VERSION, latestVer) && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginLeft: '8px' }}>
+              <button style={{ ...CSS.actionBtn, ...CSS.badgeEnabled, fontSize: '11px', padding: '2px 8px' }} disabled={updating} onClick={() => void doUpdate()}>
+                {updating ? '更新中…' : `↑ v${latestVer} 更新`}
+              </button>
+              {updateMsg !== '' && <span style={{ ...CSS.hint, whiteSpace: 'nowrap' as const }}>{updateMsg.slice(0, 60)}</span>}
+            </span>
+          )}
         </div>
         <button style={CSS.refreshBtn} onClick={refresh}>{t('refresh')}</button>
       </div>
 
       {state.status === 'error' && <div style={CSS.error}>✖ {t('loadFailed')}: {state.message}</div>}
-
-      {latestVer !== '' && isOlder(ARMORY_VERSION, latestVer) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', marginBottom: '10px', borderRadius: '8px', border: '1px solid #58a6ff', background: 'rgba(88,166,255,.08)' }}>
-          <span style={{ fontSize: '12px', color: '#58a6ff', flex: 1 }}>有新版本 v{latestVer}（当前 v{ARMORY_VERSION}）</span>
-          <button style={{ ...CSS.actionBtn, ...CSS.badgeEnabled }} disabled={updating} onClick={() => void doUpdate()}>{updating ? '更新中…' : '一键更新'}</button>
-          {updateMsg !== '' && <span style={{ ...CSS.hint }}>{updateMsg}</span>}
-        </div>
-      )}
 
       {/* Tab bar */}
       <div style={CSS.tabs}>

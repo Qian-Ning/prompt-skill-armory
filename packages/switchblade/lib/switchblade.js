@@ -665,14 +665,6 @@ async function buildExport(ids, includeAttachments, includeWorkspace) {
 		await cp(src, dst, { recursive: true });
 		projectKeys.add(key);
 	}
-	if (includeAttachments && existsSync(ATTACHMENTS_ROOT)) await cp(ATTACHMENTS_ROOT, join(tmp, "attachments"), { recursive: true });
-	if (includeWorkspace) {
-		const ws = join(STORAGES_ROOT, "workspace.json");
-		if (existsSync(ws)) {
-			await mkdir(join(tmp, "storages"), { recursive: true });
-			await cp(ws, join(tmp, "storages", "workspace.json"));
-		}
-	}
 	await writeFile(join(tmp, "manifest.json"), JSON.stringify({
 		format: 1,
 		exportedAt: Date.now(),

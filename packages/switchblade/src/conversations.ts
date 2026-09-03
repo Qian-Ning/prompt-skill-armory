@@ -417,13 +417,8 @@ async function buildExport(ids: string[], includeAttachments: boolean, includeWo
     projectKeys.add(key)
   }
 
-  if (includeAttachments && existsSync(ATTACHMENTS_ROOT)) {
-    await cp(ATTACHMENTS_ROOT, join(tmp, 'attachments'), { recursive: true })
-  }
-  if (includeWorkspace) {
-    const ws = join(STORAGES_ROOT, 'workspace.json')
-    if (existsSync(ws)) { await mkdir(join(tmp, 'storages'), { recursive: true }); await cp(ws, join(tmp, 'storages', 'workspace.json')) }
-  }
+  // 隐私优先：绝不打包全局附件/工作区——zip 只含勾选的会话与 manifest。
+  void includeAttachments; void includeWorkspace
   await writeFile(join(tmp, 'manifest.json'), JSON.stringify({ format: 1, exportedAt: Date.now(), projectKeys: [...projectKeys] }))
 
   await ps(`Compress-Archive -Path "${join(tmp, '*')}" -DestinationPath "${zip}" -Force`)

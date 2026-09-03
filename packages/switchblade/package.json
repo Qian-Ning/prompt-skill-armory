@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-switchblade",
   "description": "CCswitch-style manager for skills, prompt profiles, and slash commands in the DeepSeek Harness",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "publishConfig": {
     "access": "public"
   },
