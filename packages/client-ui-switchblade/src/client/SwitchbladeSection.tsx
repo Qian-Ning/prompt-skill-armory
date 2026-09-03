@@ -2,7 +2,7 @@
  * Prompt-SkillArmory management page.
  *
  * Three tabs within the settings dialog's fixed width: Prompts / Skills /
- * Agent Presets. The Skills tab is the single home for skills — both the ones
+ * MCP / Wallpaper / Chat / Stats. The Skills tab is the single home for skills — both the ones
  * installed through this panel and the ones scanned from the local skill
  * roots — merged into one list with full management (add / edit / toggle /
  * remove / invoke hint). A CLI entry box offers direct command installation.
@@ -15,7 +15,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { SwitchbladeKey } from './locales.ts'
 import type { McpServerRow, SwitchbladeSectionInjected, SwitchbladeSectionState } from './store.ts'
 import { backgroundClient, DEFAULT_BACKGROUND, applyBackground, uploadMedia, isDesktopSurface, GRADIENTS, type BackgroundSettings } from './background.ts'
-import { listConversations, exportConversations, downloadExport, importConversations, deleteConversations, checkLatestVersion, runUpdate, isOlder, type ConversationRow } from './conversations.ts'
+import { listConversations, exportConversations, downloadExport, importConversations, deleteConversations, checkLatestVersion, runUpdate, isOlder, fetchStats, type ConversationRow, type UsageStats } from './conversations.ts'
 
 export type { SwitchbladeSectionInjected } from './store.ts'
 
@@ -328,16 +328,138 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
   )
 }
 
-type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'presets' | 'chat'
+type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'chat' | 'stats'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.8.3'
+const ARMORY_VERSION = '0.9.0'
+
+/** Compact duration: 45.2s / 2m42s / 1h05m. */
+function fmtDuration(ms: number): string {
+  const s = ms / 1000
+  if (s < 60) return `${Math.round(s * 10) / 10}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m${Math.round(s % 60)}s`
+  const h = Math.floor(m / 60)
+  return `${h}h${String(m % 60).padStart(2, '0')}m`
+}
+
+/** Compact token count: 517 / 12.2K / 1.2M. */
+function fmtTokens(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1_000_000) return `${Math.round(n / 1000)}K`
+  return `${Math.round(n / 1_000_000 * 10) / 10}M`
+}
+
+/** USD cost, 4 decimals or compact. */
+function fmtUsd(n: number): string {
+  if (n === 0) return '$0'
+  if (n < 0.0001) return '<$0.0001'
+  return `$${n.toFixed(4)}`
+}
+
+/** Percent. */
+function fmtPct(n: number): string {
+  return `${(n * 100).toFixed(1)}%`
+}
+
+interface TrendPoint { date: string; steps: number; outputTokens: number; inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }
+
+/** SVG line chart with dual axes (steps left, tokens right) + hover tooltip. */
+function TrendChart({ byDay }: { byDay: TrendPoint[] }): JSX.Element {
+  const [hover, setHover] = useState<number | null>(null)
+  const W = 640
+  const H = 180
+  const PAD = { l: 38, r: 52, t: 10, b: 22 }
+  const iw = W - PAD.l - PAD.r
+  const ih = H - PAD.t - PAD.b
+  const n = byDay.length
+  if (n === 0) return <div style={CSS.empty}>暂无趋势数据</div>
+
+  const maxSteps = Math.max(...byDay.map((d) => d.steps), 1)
+  const maxTokens = Math.max(...byDay.map((d) => d.outputTokens), 1)
+  const x = (i: number): number => PAD.l + (n === 1 ? iw / 2 : (i / (n - 1)) * iw)
+  const ySteps = (v: number): number => PAD.t + ih - (v / maxSteps) * ih
+  const yTok = (v: number): number => PAD.t + ih - (v / maxTokens) * ih
+
+  const pathSteps = byDay.map((d, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${ySteps(d.steps).toFixed(1)}`).join(' ')
+  const pathOut = byDay.map((d, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${yTok(d.outputTokens).toFixed(1)}`).join(' ')
+  const pathIn = byDay.map((d, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${yTok(d.inputTokens).toFixed(1)}`).join(' ')
+
+  // gridlines (4)
+  const grid = [0, 1, 2, 3, 4].map((g) => {
+    const v = maxSteps * (g / 4)
+    const yy = ySteps(v)
+    return { yy, label: g === 0 ? '0' : fmtTokens(v) }
+  })
+
+  const hovered = hover !== null ? byDay[hover] : undefined
+
+  return (
+    <div style={{ position: 'relative', width: '100%' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="180" onMouseLeave={() => setHover(null)}>
+        {/* gridlines + left labels */}
+        {grid.map((g, i) => (
+          <g key={i}>
+            <line x1={PAD.l} y1={g.yy} x2={W - PAD.r} y2={g.yy} stroke="#21262d" strokeWidth="1" />
+            <text x={PAD.l - 5} y={g.yy + 3} textAnchor="end" fontSize="9" fill="#8b949e">{g.label}</text>
+          </g>
+        ))}
+        {/* right tokens max label */}
+        <text x={W - PAD.r + 6} y={PAD.t + 8} fontSize="9" fill="#3fb950">{fmtTokens(maxTokens)}</text>
+        {/* x labels (max 7) */}
+        {byDay.map((d, i) => {
+          if (n > 7 && i % Math.ceil(n / 7) !== 0 && i !== n - 1) return null
+          return <text key={i} x={x(i)} y={H - 6} textAnchor="middle" fontSize="9" fill="#8b949e">{d.date.includes(':') ? d.date : d.date.slice(5)}</text>
+        })}
+        {/* hover vertical guide */}
+        {hover !== null && (
+          <line x1={x(hover)} y1={PAD.t} x2={x(hover)} y2={PAD.t + ih} stroke="#58a6ff" strokeDasharray="3 3" strokeWidth="1" />
+        )}
+        {/* data lines */}
+        <path d={pathIn} fill="none" stroke="#58a6ff" strokeWidth="1.6" opacity="0.7" />
+        <path d={pathOut} fill="none" stroke="#3fb950" strokeWidth="1.8" />
+        <path d={pathSteps} fill="none" stroke="#d29922" strokeWidth="1.8" strokeDasharray="4 3" />
+        {/* always-visible data dots + hover hit areas + value labels */}
+        {byDay.map((d, i) => (
+          <g key={i}>
+            <rect x={x(i) - 10} y={PAD.t} width={20} height={ih} fill="transparent" onMouseEnter={() => setHover(i)} />
+            <circle cx={x(i)} cy={ySteps(d.steps)} r={hover === i ? 4 : 3} fill="#d29922" stroke="#0d1117" strokeWidth="1" />
+            <circle cx={x(i)} cy={yTok(d.outputTokens)} r={hover === i ? 4 : 3} fill="#3fb950" stroke="#0d1117" strokeWidth="1" />
+            {n <= 4 && (
+              <>
+                <text x={x(i)} y={ySteps(d.steps) - 6} textAnchor="middle" fontSize="8.5" fill="#d29922">{d.steps}</text>
+                <text x={x(i)} y={yTok(d.outputTokens) - 6} textAnchor="middle" fontSize="8.5" fill="#3fb950">{fmtTokens(d.outputTokens)}</text>
+              </>
+            )}
+          </g>
+        ))}
+      </svg>
+      {/* tooltip */}
+      {hovered !== undefined && (
+        <div style={{ position: 'absolute', top: 0, left: Math.min(Math.max(x(hover!) / W * 100, 10), 70) + '%', background: 'rgba(22,27,34,.95)', border: '1px solid #30363d', borderRadius: '8px', padding: '8px 10px', fontSize: '11px', color: '#e6edf3', zIndex: 5, whiteSpace: 'nowrap', boxShadow: '0 4px 14px rgba(0,0,0,.4)' }}>
+          <div style={{ fontWeight: 600, marginBottom: '4px', color: '#58a6ff' }}>{hovered.date}</div>
+          <div>步骤：{hovered.steps}</div>
+          <div>输出：{fmtTokens(hovered.outputTokens)}</div>
+          <div>输入：{fmtTokens(hovered.inputTokens)}</div>
+          <div>缓存读：{fmtTokens(hovered.cacheReadTokens)} · 写：{fmtTokens(hovered.cacheWriteTokens)}</div>
+        </div>
+      )}
+      {/* legend */}
+      <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '11px', color: '#8b949e', flexWrap: 'wrap' as const }}>
+        <span><span style={{ color: '#d29922' }}>—</span> 步骤</span>
+        <span><span style={{ color: '#3fb950' }}>—</span> 输出 Token</span>
+        <span><span style={{ color: '#58a6ff' }}>—</span> 输入 Token</span>
+      </div>
+    </div>
+  )
+}
+
 
 /** Render the Prompt-SkillArmory management page. */
 export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element {
   const {
     useSwitchblade, t, load,
-    setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt,
+    addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt,
     installSkill, updateSkill, setSkillEnabled, uninstallSkill,
     addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer, testMcpServer,
     refreshSessions,
@@ -353,7 +475,6 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
   const [pickedFile, setPickedFile] = useState('')
   const [promptQuery, setPromptQuery] = useState('')
   const [skillQuery, setSkillQuery] = useState('')
-  const [presetQuery, setPresetQuery] = useState('')
   const [activeTab, setActiveTab] = useState<TabKey>('prompts')
   const [editingPromptId, setEditingPromptId] = useState<string | undefined>()
   const [editingSkillName, setEditingSkillName] = useState<string | undefined>()
@@ -373,10 +494,6 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
 
   const refresh = (): void => {
     void load()
-  }
-
-  const setDefault = (id: string): void => {
-    void setDefaultPreset(id)
   }
 
   /** Parse newline-separated `KEY=VALUE` lines into a record. */
@@ -443,6 +560,12 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
   const [latestVer, setLatestVer] = useState('')
   const [updating, setUpdating] = useState(false)
   const [updateMsg, setUpdateMsg] = useState('')
+  // Usage stats
+  const [stats, setStats] = useState<UsageStats | null>(null)
+  const [statsRange, setStatsRange] = useState('all')
+
+  const reloadStats = async (): Promise<void> => { setStats(await fetchStats(statsRange)) }
+  const changeStatsRange = (r: string): void => { setStatsRange(r); void fetchStats(r).then(setStats) }
 
   useEffect(() => {
     void checkLatestVersion().then((v) => { if (v !== '') setLatestVer(v) })
@@ -622,11 +745,6 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     id: p.id, name: p.name, desc: p.description, state: p.enabled ? ('enabled' as const) : ('disabled' as const),
     promptId: p.id, isDefault: p.isDefault, content: p.content, promptEnabled: p.enabled,
   }))
-  const presetRows = state.presets.map((p) => ({
-    id: p.id, name: p.name ?? p.id, desc: p.description ?? p.trust,
-    state: p.isDefault ? ('enabled' as const) : ('installed' as const),
-    presetId: p.id, isDefault: p.isDefault,
-  }))
 
   // Merge managed + scanned skills into ONE list, managed first.
   const managedNames = new Set(state.installedSkills.map((s) => s.name))
@@ -649,7 +767,6 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     return row.name.toLowerCase().includes(query) || row.desc.toLowerCase().includes(query)
   }
   const filteredPrompts = promptRows.filter((r) => match(r, promptQuery))
-  const filteredPresets = presetRows.filter((r) => match(r, presetQuery))
   const filteredSkills = allSkillRows.filter((r) => match(r, skillQuery))
 
   const badge = (state: 'enabled' | 'disabled' | 'installed'): CSSProperties => (
@@ -696,8 +813,8 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
         <button style={{ ...CSS.tab, ...(activeTab === 'chat' ? CSS.tabActive : {}) }} onClick={() => { setActiveTab('chat'); void reloadChat() }}>
           对话 ({chatRows.length})
         </button>
-        <button style={{ ...CSS.tab, ...(activeTab === 'presets' ? CSS.tabActive : {}) }} onClick={() => setActiveTab('presets')}>
-          {t('agentPresetsTitle')} ({state.status === 'loading' ? '…' : presetRows.length})
+        <button style={{ ...CSS.tab, ...(activeTab === 'stats' ? CSS.tabActive : {}) }} onClick={() => { setActiveTab('stats'); void reloadStats() }}>
+          统计
         </button>
       </div>
 
@@ -795,28 +912,6 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
                         </>
                       )}
                     </div>
-                  </div>
-                ))}
-            </div>
-          </>
-        )}
-
-        {/* ── Tab: presets ──────────────────────────────────────── */}
-        {activeTab === 'presets' && (
-          <>
-            <div style={CSS.colHeader}>{t('agentPresetsTitle')} ({presetRows.length})</div>
-            <input style={CSS.searchInput} placeholder={t('searchPlaceholder')} value={presetQuery} onChange={(e) => setPresetQuery(e.target.value)} />
-            <div style={CSS.scrollBox}>
-              {filteredPresets.length === 0
-                ? <div style={CSS.empty}>{t('empty')}</div>
-                : filteredPresets.map((row) => (
-                  <div key={row.id} style={CSS.card}>
-                    <div style={CSS.cardTop}>
-                      <div style={CSS.name}>{row.isDefault ? '★ ' : ''}{row.name}</div>
-                      <span style={{ ...CSS.badge, ...badge(row.state) }}>{label(row.state)}</span>
-                    </div>
-                    <div style={CSS.desc}>{row.desc}</div>
-                    {!row.isDefault && <button style={CSS.actionBtn} onClick={() => setDefault(row.presetId!)}>{t('setDefault')}</button>}
                   </div>
                 ))}
             </div>
@@ -1035,6 +1130,102 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
                       </div>
                     )
                   })}
+            </div>
+          </>
+        )}
+
+                        {/* ── Tab: usage stats ─────────────────────────────── */}
+        {activeTab === 'stats' && (
+          <>
+            <div style={CSS.form}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' as const }}>
+                <span style={{ fontSize: '13px', fontWeight: 600 }}>使用统计</span>
+                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                  {(['all', '30d', '7d', 'today'] as const).map((r) => (
+                    <button key={r} style={{ ...CSS.actionBtn, ...(statsRange === r ? CSS.tabActive : {}) }} onClick={() => changeStatsRange(r)}>
+                      {r === 'all' ? '全部' : r === '30d' ? '30天' : r === '7d' ? '7天' : '今天'}
+                    </button>
+                  ))}
+                  <button style={CSS.actionBtn} onClick={() => void reloadStats()}>刷新</button>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginTop: '4px' }}>
+                <div style={CSS.card}><div style={CSS.hint}>会话</div><div style={{ fontSize: '15px', fontWeight: 700, color: '#e6edf3' }}>{stats?.totals.sessions ?? '—'}</div></div>
+                <div style={CSS.card}><div style={CSS.hint}>轮 / 步骤</div><div style={{ fontSize: '15px', fontWeight: 700, color: '#e6edf3' }}>{stats ? `${stats.totals.turns} / ${stats.totals.steps}` : '—'}</div></div>
+                <div style={CSS.card}><div style={CSS.hint}>LLM / 工具时长</div><div style={{ fontSize: '15px', fontWeight: 700, color: '#e6edf3' }}>{stats ? `${fmtDuration(stats.totals.llmMs)} / ${fmtDuration(stats.totals.toolMs)}` : '—'}</div></div>
+                <div style={CSS.card}><div style={CSS.hint}>输入 Token</div><div style={{ fontSize: '15px', fontWeight: 700, color: '#e6edf3' }}>{stats ? fmtTokens(stats.totals.inputTokens) : '—'}</div></div>
+                <div style={CSS.card}><div style={CSS.hint}>输出 Token</div><div style={{ fontSize: '15px', fontWeight: 700, color: '#e6edf3' }}>{stats ? fmtTokens(stats.totals.outputTokens) : '—'}</div></div>
+                <div style={CSS.card}><div style={CSS.hint}>缓存读 / 写</div><div style={{ fontSize: '15px', fontWeight: 700, color: '#e6edf3' }}>{stats ? `${fmtTokens(stats.totals.cacheReadTokens)} / ${fmtTokens(stats.totals.cacheWriteTokens)}` : '—'}</div></div>
+                <div style={CSS.card}><div style={CSS.hint}>缓存命中率</div><div style={{ fontSize: '15px', fontWeight: 700, color: '#e6edf3' }}>{stats ? fmtPct(stats.totals.cacheHitRate) : '—'}</div></div>
+                <div style={CSS.card}><div style={CSS.hint}>总成本</div><div style={{ fontSize: '15px', fontWeight: 700, color: '#e6edf3' }}>{stats ? fmtUsd(stats.totals.costUsd) : '—'}</div></div>
+                <div style={CSS.card}><div style={CSS.hint}>平均首Token</div><div style={{ fontSize: '15px', fontWeight: 700, color: '#e6edf3' }}>{stats ? fmtDuration(stats.totals.avgTtftMs) : '—'}</div></div>
+                <div style={CSS.card}><div style={CSS.hint}>输出吞吐</div><div style={{ fontSize: '15px', fontWeight: 700, color: '#e6edf3' }}>{stats ? `${stats.totals.tokPerSec.toFixed(0)} tok/s` : '—'}</div></div>
+                <div style={CSS.card}><div style={CSS.hint}>每会话平均</div><div style={{ fontSize: '15px', fontWeight: 700, color: '#e6edf3' }}>{stats ? `${stats.totals.perSessionSteps.toFixed(1)} 步` : '—'}</div></div>
+                <div style={CSS.card}><div style={CSS.hint}>活跃天数</div><div style={{ fontSize: '15px', fontWeight: 700, color: '#e6edf3' }}>{stats?.totals.activeDays ?? '—'}</div></div>
+              </div>
+              {stats !== null && (stats.byDay.length > 0 || stats.byHour.length > 0) && (
+                <TrendChart byDay={stats.byHour.length > 0
+                  ? stats.byHour.map((h) => ({
+                      date: `${String(h.hour).padStart(2, '0')}:00`,
+                      steps: h.steps,
+                      outputTokens: h.outputTokens,
+                      inputTokens: h.inputTokens,
+                      cacheReadTokens: h.cacheReadTokens,
+                      cacheWriteTokens: h.cacheWriteTokens,
+                    }))
+                  : stats.byDay} />
+              )}
+            </div>
+            <div style={CSS.scrollBox}>
+              {(stats?.byProject ?? []).length === 0 && (stats?.recent ?? []).length === 0
+                ? <div style={CSS.empty}>暂无使用记录</div>
+                : <></>}
+              {(stats?.recent ?? []).length > 0 && (
+                <div>
+                  <div style={{ ...CSS.hint, marginBottom: '4px' }}>请求日志（最近 {stats!.recent.length}）</div>
+                  {stats!.recent.map((r) => (
+                    <div key={r.time + '-' + r.provider} style={CSS.card}>
+                      <div style={CSS.cardTop}>
+                        <div style={{ ...CSS.name, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>{r.provider}</div>
+                        <span style={{ ...CSS.badge, ...(r.status === 'done' ? CSS.badgeEnabled : CSS.badgeInstalled) }}>{r.status === 'done' ? '完成' : '进行中'}</span>
+                      </div>
+                      <div style={CSS.desc}>
+                        {new Date(r.time).toLocaleString()} · {fmtTokens(r.inputTokens)} in / {fmtTokens(r.outputTokens)} out · R{fmtTokens(r.cacheReadTokens)}·W{fmtTokens(r.cacheWriteTokens)} · 命中 {fmtPct(r.cacheHitRate)} · {fmtUsd(r.costUsd)} · {fmtDuration(r.latencyMs)} / 首字 {fmtDuration(r.firstTokenMs)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {(stats?.byProject ?? []).length > 0 && (
+                <div>
+                  <div style={{ ...CSS.hint, marginBottom: '4px' }}>Provider / 项目统计</div>
+                  {stats!.byProject.slice(0, 20).map((p) => (
+                    <div key={p.project} style={CSS.card}>
+                      <div style={CSS.cardTop}>
+                        <div style={{ ...CSS.name, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>{p.project}</div>
+                        <span style={{ ...CSS.badge, ...CSS.badgeDisabled }}>{p.sessions} 会话</span>
+                      </div>
+                      <div style={CSS.desc}>
+                        {p.steps} 步 · {fmtTokens(p.inputTokens)} in / {fmtTokens(p.outputTokens)} out · R{fmtTokens(p.cacheReadTokens)} · 命中 {fmtPct(p.cacheHitRate)} · {fmtUsd(p.costUsd)} · 延迟 {p.avgLatencyMs.toFixed(0)}ms · 成功 {p.successRate.toFixed(0)}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {(stats?.byModel ?? []).length > 0 && (
+                <div>
+                  <div style={{ ...CSS.hint, marginBottom: '4px' }}>模型统计</div>
+                  {stats!.byModel.slice(0, 20).map((m) => (
+                    <div key={m.model} style={CSS.card}>
+                      <div style={CSS.cardTop}>
+                        <div style={{ ...CSS.name, whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>{m.model}</div>
+                        <span style={{ ...CSS.badge, ...CSS.badgeDisabled }}>{m.sessions} 会话</span>
+                      </div>
+                      <div style={CSS.desc}>{m.steps} 步 · {fmtTokens(m.inputTokens)} in / {fmtTokens(m.outputTokens)} out · 命中 {fmtPct(m.cacheHitRate)} · {fmtUsd(m.costUsd)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}

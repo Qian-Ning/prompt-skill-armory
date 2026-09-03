@@ -18,7 +18,6 @@ window.__ModuleLoader__.load({
 		const zh = {
 			nav: "Armory",
 			skillsTitle: "技能",
-			presetsTitle: "提示词预设",
 			promptsTitle: "提示词",
 			commandsTitle: "命令",
 			empty: "(空)",
@@ -48,7 +47,6 @@ window.__ModuleLoader__.load({
 			installedSkillsGoRight: "已安装的技能在右侧第四列管理",
 			manage: "托管",
 			localSkills: "本地扫描技能",
-			agentPresetsTitle: "Agent预设",
 			edit: "编辑",
 			save: "保存",
 			cancel: "取消",
@@ -60,7 +58,6 @@ window.__ModuleLoader__.load({
 		const en = {
 			nav: "Armory",
 			skillsTitle: "Skills",
-			presetsTitle: "Prompt Presets",
 			promptsTitle: "Prompts",
 			commandsTitle: "Commands",
 			empty: "(empty)",
@@ -90,7 +87,6 @@ window.__ModuleLoader__.load({
 			installedSkillsGoRight: "Installed skills are managed in the right column",
 			manage: "Manage",
 			localSkills: "Scanned skills",
-			agentPresetsTitle: "Agent Presets",
 			edit: "Edit",
 			save: "Save",
 			cancel: "Cancel",
@@ -592,6 +588,22 @@ window.__ModuleLoader__.load({
 			}
 			return false;
 		}
+		async function fetchStats(range = "all") {
+			try {
+				const b = await (await fetch(`/api/armory/stats?range=${encodeURIComponent(range)}`)).json();
+				return b.ok ? {
+					range: b.range,
+					totals: b.totals,
+					byDay: b.byDay,
+					byHour: b.byHour,
+					byProject: b.byProject,
+					byModel: b.byModel,
+					recent: b.recent
+				} : null;
+			} catch {
+				return null;
+			}
+		}
 		async function importConversations(file, targetProject) {
 			try {
 				const q = targetProject !== void 0 && targetProject !== "" ? `?project=${encodeURIComponent(targetProject)}` : "";
@@ -611,7 +623,7 @@ window.__ModuleLoader__.load({
 		* Prompt-SkillArmory management page.
 		*
 		* Three tabs within the settings dialog's fixed width: Prompts / Skills /
-		* Agent Presets. The Skills tab is the single home for skills — both the ones
+		* MCP / Wallpaper / Chat / Stats. The Skills tab is the single home for skills — both the ones
 		* installed through this panel and the ones scanned from the local skill
 		* roots — merged into one list with full management (add / edit / toggle /
 		* remove / invoke hint). A CLI entry box offers direct command installation.
@@ -927,10 +939,253 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.8.3";
+		const ARMORY_VERSION = "0.9.0";
+		/** Compact duration: 45.2s / 2m42s / 1h05m. */
+		function fmtDuration(ms) {
+			const s = ms / 1e3;
+			if (s < 60) return `${Math.round(s * 10) / 10}s`;
+			const m = Math.floor(s / 60);
+			if (m < 60) return `${m}m${Math.round(s % 60)}s`;
+			return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}m`;
+		}
+		/** Compact token count: 517 / 12.2K / 1.2M. */
+		function fmtTokens(n) {
+			if (n < 1e3) return String(n);
+			if (n < 1e6) return `${Math.round(n / 1e3)}K`;
+			return `${Math.round(n / 1e6 * 10) / 10}M`;
+		}
+		/** USD cost, 4 decimals or compact. */
+		function fmtUsd(n) {
+			if (n === 0) return "$0";
+			if (n < 1e-4) return "<$0.0001";
+			return `$${n.toFixed(4)}`;
+		}
+		/** Percent. */
+		function fmtPct(n) {
+			return `${(n * 100).toFixed(1)}%`;
+		}
+		/** SVG line chart with dual axes (steps left, tokens right) + hover tooltip. */
+		function TrendChart({ byDay }) {
+			const [hover, setHover] = (0, react.useState)(null);
+			const W = 640;
+			const H = 180;
+			const PAD = {
+				l: 38,
+				r: 52,
+				t: 10,
+				b: 22
+			};
+			const iw = W - PAD.l - PAD.r;
+			const ih = H - PAD.t - PAD.b;
+			const n = byDay.length;
+			if (n === 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				style: CSS.empty,
+				children: "暂无趋势数据"
+			});
+			const maxSteps = Math.max(...byDay.map((d) => d.steps), 1);
+			const maxTokens = Math.max(...byDay.map((d) => d.outputTokens), 1);
+			const x = (i) => PAD.l + (n === 1 ? iw / 2 : i / (n - 1) * iw);
+			const ySteps = (v) => PAD.t + ih - v / maxSteps * ih;
+			const yTok = (v) => PAD.t + ih - v / maxTokens * ih;
+			const pathSteps = byDay.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${ySteps(d.steps).toFixed(1)}`).join(" ");
+			const pathOut = byDay.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${yTok(d.outputTokens).toFixed(1)}`).join(" ");
+			const pathIn = byDay.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${yTok(d.inputTokens).toFixed(1)}`).join(" ");
+			const grid = [
+				0,
+				1,
+				2,
+				3,
+				4
+			].map((g) => {
+				const v = maxSteps * (g / 4);
+				return {
+					yy: ySteps(v),
+					label: g === 0 ? "0" : fmtTokens(v)
+				};
+			});
+			const hovered = hover !== null ? byDay[hover] : void 0;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				style: {
+					position: "relative",
+					width: "100%"
+				},
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+						viewBox: `0 0 ${W} ${H}`,
+						width: "100%",
+						height: "180",
+						onMouseLeave: () => setHover(null),
+						children: [
+							grid.map((g, i) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("g", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+								x1: PAD.l,
+								y1: g.yy,
+								x2: W - PAD.r,
+								y2: g.yy,
+								stroke: "#21262d",
+								strokeWidth: "1"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
+								x: PAD.l - 5,
+								y: g.yy + 3,
+								textAnchor: "end",
+								fontSize: "9",
+								fill: "#8b949e",
+								children: g.label
+							})] }, i)),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
+								x: W - PAD.r + 6,
+								y: PAD.t + 8,
+								fontSize: "9",
+								fill: "#3fb950",
+								children: fmtTokens(maxTokens)
+							}),
+							byDay.map((d, i) => {
+								if (n > 7 && i % Math.ceil(n / 7) !== 0 && i !== n - 1) return null;
+								return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
+									x: x(i),
+									y: H - 6,
+									textAnchor: "middle",
+									fontSize: "9",
+									fill: "#8b949e",
+									children: d.date.includes(":") ? d.date : d.date.slice(5)
+								}, i);
+							}),
+							hover !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+								x1: x(hover),
+								y1: PAD.t,
+								x2: x(hover),
+								y2: PAD.t + ih,
+								stroke: "#58a6ff",
+								strokeDasharray: "3 3",
+								strokeWidth: "1"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+								d: pathIn,
+								fill: "none",
+								stroke: "#58a6ff",
+								strokeWidth: "1.6",
+								opacity: "0.7"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+								d: pathOut,
+								fill: "none",
+								stroke: "#3fb950",
+								strokeWidth: "1.8"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+								d: pathSteps,
+								fill: "none",
+								stroke: "#d29922",
+								strokeWidth: "1.8",
+								strokeDasharray: "4 3"
+							}),
+							byDay.map((d, i) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("g", { children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+									x: x(i) - 10,
+									y: PAD.t,
+									width: 20,
+									height: ih,
+									fill: "transparent",
+									onMouseEnter: () => setHover(i)
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+									cx: x(i),
+									cy: ySteps(d.steps),
+									r: hover === i ? 4 : 3,
+									fill: "#d29922",
+									stroke: "#0d1117",
+									strokeWidth: "1"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+									cx: x(i),
+									cy: yTok(d.outputTokens),
+									r: hover === i ? 4 : 3,
+									fill: "#3fb950",
+									stroke: "#0d1117",
+									strokeWidth: "1"
+								}),
+								n <= 4 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
+									x: x(i),
+									y: ySteps(d.steps) - 6,
+									textAnchor: "middle",
+									fontSize: "8.5",
+									fill: "#d29922",
+									children: d.steps
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
+									x: x(i),
+									y: yTok(d.outputTokens) - 6,
+									textAnchor: "middle",
+									fontSize: "8.5",
+									fill: "#3fb950",
+									children: fmtTokens(d.outputTokens)
+								})] })
+							] }, i))
+						]
+					}),
+					hovered !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						style: {
+							position: "absolute",
+							top: 0,
+							left: Math.min(Math.max(x(hover) / W * 100, 10), 70) + "%",
+							background: "rgba(22,27,34,.95)",
+							border: "1px solid #30363d",
+							borderRadius: "8px",
+							padding: "8px 10px",
+							fontSize: "11px",
+							color: "#e6edf3",
+							zIndex: 5,
+							whiteSpace: "nowrap",
+							boxShadow: "0 4px 14px rgba(0,0,0,.4)"
+						},
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								style: {
+									fontWeight: 600,
+									marginBottom: "4px",
+									color: "#58a6ff"
+								},
+								children: hovered.date
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: ["步骤：", hovered.steps] }),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: ["输出：", fmtTokens(hovered.outputTokens)] }),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: ["输入：", fmtTokens(hovered.inputTokens)] }),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [
+								"缓存读：",
+								fmtTokens(hovered.cacheReadTokens),
+								" · 写：",
+								fmtTokens(hovered.cacheWriteTokens)
+							] })
+						]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							gap: "12px",
+							marginTop: "4px",
+							fontSize: "11px",
+							color: "#8b949e",
+							flexWrap: "wrap"
+						},
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								style: { color: "#d29922" },
+								children: "—"
+							}), " 步骤"] }),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								style: { color: "#3fb950" },
+								children: "—"
+							}), " 输出 Token"] }),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								style: { color: "#58a6ff" },
+								children: "—"
+							}), " 输入 Token"] })
+						]
+					})
+				]
+			});
+		}
 		/** Render the Prompt-SkillArmory management page. */
 		function SwitchbladeSection(props) {
-			const { useSwitchblade, t, load, setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt, installSkill, updateSkill, setSkillEnabled, uninstallSkill, addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer, testMcpServer, refreshSessions } = props;
+			const { useSwitchblade, t, load, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt, installSkill, updateSkill, setSkillEnabled, uninstallSkill, addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer, testMcpServer, refreshSessions } = props;
 			const state = useSwitchblade((snapshot) => snapshot);
 			const [promptName, setPromptName] = (0, react.useState)("");
 			const [promptDesc, setPromptDesc] = (0, react.useState)("");
@@ -942,7 +1197,6 @@ window.__ModuleLoader__.load({
 			const [pickedFile, setPickedFile] = (0, react.useState)("");
 			const [promptQuery, setPromptQuery] = (0, react.useState)("");
 			const [skillQuery, setSkillQuery] = (0, react.useState)("");
-			const [presetQuery, setPresetQuery] = (0, react.useState)("");
 			const [activeTab, setActiveTab] = (0, react.useState)("prompts");
 			const [editingPromptId, setEditingPromptId] = (0, react.useState)();
 			const [editingSkillName, setEditingSkillName] = (0, react.useState)();
@@ -959,9 +1213,6 @@ window.__ModuleLoader__.load({
 			}, [load]);
 			const refresh = () => {
 				load();
-			};
-			const setDefault = (id) => {
-				setDefaultPreset(id);
 			};
 			/** Parse newline-separated `KEY=VALUE` lines into a record. */
 			const parseKv = (text) => {
@@ -1025,6 +1276,15 @@ window.__ModuleLoader__.load({
 			const [latestVer, setLatestVer] = (0, react.useState)("");
 			const [updating, setUpdating] = (0, react.useState)(false);
 			const [updateMsg, setUpdateMsg] = (0, react.useState)("");
+			const [stats, setStats] = (0, react.useState)(null);
+			const [statsRange, setStatsRange] = (0, react.useState)("all");
+			const reloadStats = async () => {
+				setStats(await fetchStats(statsRange));
+			};
+			const changeStatsRange = (r) => {
+				setStatsRange(r);
+				fetchStats(r).then(setStats);
+			};
 			(0, react.useEffect)(() => {
 				checkLatestVersion().then((v) => {
 					if (v !== "") setLatestVer(v);
@@ -1251,14 +1511,6 @@ window.__ModuleLoader__.load({
 				content: p.content,
 				promptEnabled: p.enabled
 			}));
-			const presetRows = state.presets.map((p) => ({
-				id: p.id,
-				name: p.name ?? p.id,
-				desc: p.description ?? p.trust,
-				state: p.isDefault ? "enabled" : "installed",
-				presetId: p.id,
-				isDefault: p.isDefault
-			}));
 			const managedNames = new Set(state.installedSkills.map((s) => s.name));
 			const managedRows = state.installedSkills.map((s) => ({
 				key: `m-${s.name}`,
@@ -1285,7 +1537,6 @@ window.__ModuleLoader__.load({
 				return row.name.toLowerCase().includes(query) || row.desc.toLowerCase().includes(query);
 			};
 			const filteredPrompts = promptRows.filter((r) => match(r, promptQuery));
-			const filteredPresets = presetRows.filter((r) => match(r, presetQuery));
 			const filteredSkills = allSkillRows.filter((r) => match(r, skillQuery));
 			const badge = (state) => state === "enabled" ? CSS.badgeEnabled : state === "disabled" ? CSS.badgeDisabled : CSS.badgeInstalled;
 			const label = (state) => state === "enabled" ? t("enabled") : state === "disabled" ? t("disabled") : t("installed");
@@ -1428,18 +1679,16 @@ window.__ModuleLoader__.load({
 									")"
 								]
 							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								style: {
 									...CSS.tab,
-									...activeTab === "presets" ? CSS.tabActive : {}
+									...activeTab === "stats" ? CSS.tabActive : {}
 								},
-								onClick: () => setActiveTab("presets"),
-								children: [
-									t("agentPresetsTitle"),
-									" (",
-									state.status === "loading" ? "…" : presetRows.length,
-									")"
-								]
+								onClick: () => {
+									setActiveTab("stats");
+									reloadStats();
+								},
+								children: "统计"
 							})
 						]
 					}),
@@ -1680,56 +1929,6 @@ window.__ModuleLoader__.load({
 											})
 										]
 									}, row.key))
-								})
-							] }),
-							activeTab === "presets" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									style: CSS.colHeader,
-									children: [
-										t("agentPresetsTitle"),
-										" (",
-										presetRows.length,
-										")"
-									]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									style: CSS.searchInput,
-									placeholder: t("searchPlaceholder"),
-									value: presetQuery,
-									onChange: (e) => setPresetQuery(e.target.value)
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-									style: CSS.scrollBox,
-									children: filteredPresets.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-										style: CSS.empty,
-										children: t("empty")
-									}) : filteredPresets.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										style: CSS.card,
-										children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-												style: CSS.cardTop,
-												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-													style: CSS.name,
-													children: [row.isDefault ? "★ " : "", row.name]
-												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-													style: {
-														...CSS.badge,
-														...badge(row.state)
-													},
-													children: label(row.state)
-												})]
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-												style: CSS.desc,
-												children: row.desc
-											}),
-											!row.isDefault && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-												style: CSS.actionBtn,
-												onClick: () => setDefault(row.presetId),
-												children: t("setDefault")
-											})
-										]
-									}, row.id))
 								})
 							] }),
 							activeTab === "mcp" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -2390,6 +2589,389 @@ window.__ModuleLoader__.load({
 										})]
 									}, id);
 								})
+							})] }),
+							activeTab === "stats" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: CSS.form,
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "flex",
+											alignItems: "center",
+											justifyContent: "space-between",
+											gap: "8px",
+											flexWrap: "wrap"
+										},
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											style: {
+												fontSize: "13px",
+												fontWeight: 600
+											},
+											children: "使用统计"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: {
+												display: "flex",
+												gap: "4px",
+												alignItems: "center"
+											},
+											children: [[
+												"all",
+												"30d",
+												"7d",
+												"today"
+											].map((r) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												style: {
+													...CSS.actionBtn,
+													...statsRange === r ? CSS.tabActive : {}
+												},
+												onClick: () => changeStatsRange(r),
+												children: r === "all" ? "全部" : r === "30d" ? "30天" : r === "7d" ? "7天" : "今天"
+											}, r)), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												style: CSS.actionBtn,
+												onClick: () => void reloadStats(),
+												children: "刷新"
+											})]
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											display: "grid",
+											gridTemplateColumns: "repeat(3, 1fr)",
+											gap: "8px",
+											marginTop: "4px"
+										},
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.card,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: CSS.hint,
+													children: "会话"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														fontSize: "15px",
+														fontWeight: 700,
+														color: "#e6edf3"
+													},
+													children: stats?.totals.sessions ?? "—"
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.card,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: CSS.hint,
+													children: "轮 / 步骤"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														fontSize: "15px",
+														fontWeight: 700,
+														color: "#e6edf3"
+													},
+													children: stats ? `${stats.totals.turns} / ${stats.totals.steps}` : "—"
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.card,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: CSS.hint,
+													children: "LLM / 工具时长"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														fontSize: "15px",
+														fontWeight: 700,
+														color: "#e6edf3"
+													},
+													children: stats ? `${fmtDuration(stats.totals.llmMs)} / ${fmtDuration(stats.totals.toolMs)}` : "—"
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.card,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: CSS.hint,
+													children: "输入 Token"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														fontSize: "15px",
+														fontWeight: 700,
+														color: "#e6edf3"
+													},
+													children: stats ? fmtTokens(stats.totals.inputTokens) : "—"
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.card,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: CSS.hint,
+													children: "输出 Token"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														fontSize: "15px",
+														fontWeight: 700,
+														color: "#e6edf3"
+													},
+													children: stats ? fmtTokens(stats.totals.outputTokens) : "—"
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.card,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: CSS.hint,
+													children: "缓存读 / 写"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														fontSize: "15px",
+														fontWeight: 700,
+														color: "#e6edf3"
+													},
+													children: stats ? `${fmtTokens(stats.totals.cacheReadTokens)} / ${fmtTokens(stats.totals.cacheWriteTokens)}` : "—"
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.card,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: CSS.hint,
+													children: "缓存命中率"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														fontSize: "15px",
+														fontWeight: 700,
+														color: "#e6edf3"
+													},
+													children: stats ? fmtPct(stats.totals.cacheHitRate) : "—"
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.card,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: CSS.hint,
+													children: "总成本"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														fontSize: "15px",
+														fontWeight: 700,
+														color: "#e6edf3"
+													},
+													children: stats ? fmtUsd(stats.totals.costUsd) : "—"
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.card,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: CSS.hint,
+													children: "平均首Token"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														fontSize: "15px",
+														fontWeight: 700,
+														color: "#e6edf3"
+													},
+													children: stats ? fmtDuration(stats.totals.avgTtftMs) : "—"
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.card,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: CSS.hint,
+													children: "输出吞吐"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														fontSize: "15px",
+														fontWeight: 700,
+														color: "#e6edf3"
+													},
+													children: stats ? `${stats.totals.tokPerSec.toFixed(0)} tok/s` : "—"
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.card,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: CSS.hint,
+													children: "每会话平均"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														fontSize: "15px",
+														fontWeight: 700,
+														color: "#e6edf3"
+													},
+													children: stats ? `${stats.totals.perSessionSteps.toFixed(1)} 步` : "—"
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												style: CSS.card,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: CSS.hint,
+													children: "活跃天数"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													style: {
+														fontSize: "15px",
+														fontWeight: 700,
+														color: "#e6edf3"
+													},
+													children: stats?.totals.activeDays ?? "—"
+												})]
+											})
+										]
+									}),
+									stats !== null && (stats.byDay.length > 0 || stats.byHour.length > 0) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TrendChart, { byDay: stats.byHour.length > 0 ? stats.byHour.map((h) => ({
+										date: `${String(h.hour).padStart(2, "0")}:00`,
+										steps: h.steps,
+										outputTokens: h.outputTokens,
+										inputTokens: h.inputTokens,
+										cacheReadTokens: h.cacheReadTokens,
+										cacheWriteTokens: h.cacheWriteTokens
+									})) : stats.byDay })
+								]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								style: CSS.scrollBox,
+								children: [
+									(stats?.byProject ?? []).length === 0 && (stats?.recent ?? []).length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										style: CSS.empty,
+										children: "暂无使用记录"
+									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(react_jsx_runtime.Fragment, {}),
+									(stats?.recent ?? []).length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: {
+											...CSS.hint,
+											marginBottom: "4px"
+										},
+										children: [
+											"请求日志（最近 ",
+											stats.recent.length,
+											"）"
+										]
+									}), stats.recent.map((r) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: CSS.card,
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: CSS.cardTop,
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+												style: {
+													...CSS.name,
+													whiteSpace: "nowrap",
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													flex: 1,
+													minWidth: 0
+												},
+												children: r.provider
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												style: {
+													...CSS.badge,
+													...r.status === "done" ? CSS.badgeEnabled : CSS.badgeInstalled
+												},
+												children: r.status === "done" ? "完成" : "进行中"
+											})]
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: CSS.desc,
+											children: [
+												new Date(r.time).toLocaleString(),
+												" · ",
+												fmtTokens(r.inputTokens),
+												" in / ",
+												fmtTokens(r.outputTokens),
+												" out · R",
+												fmtTokens(r.cacheReadTokens),
+												"·W",
+												fmtTokens(r.cacheWriteTokens),
+												" · 命中 ",
+												fmtPct(r.cacheHitRate),
+												" · ",
+												fmtUsd(r.costUsd),
+												" · ",
+												fmtDuration(r.latencyMs),
+												" / 首字 ",
+												fmtDuration(r.firstTokenMs)
+											]
+										})]
+									}, r.time + "-" + r.provider))] }),
+									(stats?.byProject ?? []).length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										style: {
+											...CSS.hint,
+											marginBottom: "4px"
+										},
+										children: "Provider / 项目统计"
+									}), stats.byProject.slice(0, 20).map((p) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: CSS.card,
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: CSS.cardTop,
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+												style: {
+													...CSS.name,
+													whiteSpace: "nowrap",
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													flex: 1,
+													minWidth: 0
+												},
+												children: p.project
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+												style: {
+													...CSS.badge,
+													...CSS.badgeDisabled
+												},
+												children: [p.sessions, " 会话"]
+											})]
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: CSS.desc,
+											children: [
+												p.steps,
+												" 步 · ",
+												fmtTokens(p.inputTokens),
+												" in / ",
+												fmtTokens(p.outputTokens),
+												" out · R",
+												fmtTokens(p.cacheReadTokens),
+												" · 命中 ",
+												fmtPct(p.cacheHitRate),
+												" · ",
+												fmtUsd(p.costUsd),
+												" · 延迟 ",
+												p.avgLatencyMs.toFixed(0),
+												"ms · 成功 ",
+												p.successRate.toFixed(0),
+												"%"
+											]
+										})]
+									}, p.project))] }),
+									(stats?.byModel ?? []).length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										style: {
+											...CSS.hint,
+											marginBottom: "4px"
+										},
+										children: "模型统计"
+									}), stats.byModel.slice(0, 20).map((m) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										style: CSS.card,
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: CSS.cardTop,
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+												style: {
+													...CSS.name,
+													whiteSpace: "nowrap",
+													overflow: "hidden",
+													textOverflow: "ellipsis",
+													flex: 1,
+													minWidth: 0
+												},
+												children: m.model
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+												style: {
+													...CSS.badge,
+													...CSS.badgeDisabled
+												},
+												children: [m.sessions, " 会话"]
+											})]
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: CSS.desc,
+											children: [
+												m.steps,
+												" 步 · ",
+												fmtTokens(m.inputTokens),
+												" in / ",
+												fmtTokens(m.outputTokens),
+												" out · 命中 ",
+												fmtPct(m.cacheHitRate),
+												" · ",
+												fmtUsd(m.costUsd)
+											]
+										})]
+									}, m.model))] })
+								]
 							})] })
 						]
 					})
@@ -2402,7 +2984,6 @@ window.__ModuleLoader__.load({
 		const IDLE = {
 			status: "idle",
 			skills: [],
-			presets: [],
 			commands: [],
 			prompts: [],
 			installedSkills: [],
@@ -2422,7 +3003,7 @@ window.__ModuleLoader__.load({
 				this.sessionId = sessionId;
 			}
 			/**
-			* Load skills, presets, prompts, and installed skills. Prompts and installed
+			* Load skills, prompts, and installed skills. Prompts and installed
 			* skills come from the `switchblade` settings namespace (the Host watches
 			* it and re-injects on change).
 			*/
@@ -2433,24 +3014,15 @@ window.__ModuleLoader__.load({
 				});
 				try {
 					const sessionId = this.sessionId?.();
-					const calls = [this.api.agentPresets.list({}), this.api.settings.describe({})];
+					const calls = [this.api.settings.describe({})];
 					if (sessionId !== void 0) calls.push(this.api.skills.list({ sessionId }));
-					const [presetRes, settingsRes, skillRes] = await Promise.all(calls);
-					if (!presetRes.result.ok) throw new Error(`agentPreset.list: ${presetRes.result.error.message}`);
+					const [settingsRes, skillRes] = await Promise.all(calls);
 					if (!settingsRes.result.ok) throw new Error(`settings.describe: ${settingsRes.result.error.message}`);
 					const skills = skillRes !== void 0 && skillRes.result.ok ? skillRes.result.value.skills.map((skill) => ({
 						name: skill.name,
 						description: skill.description,
 						modelInvocable: skill.modelInvocable
 					})) : [];
-					const presets = presetRes.result.value.presets.map((preset) => ({
-						id: preset.id,
-						isDefault: preset.isDefault,
-						trust: preset.trust,
-						...preset.name === void 0 ? {} : { name: preset.name },
-						...preset.description === void 0 ? {} : { description: preset.description },
-						...preset.broken === void 0 ? {} : { broken: preset.broken }
-					}));
 					const switchbladeSection = this.sectionFromSettings(settingsRes.result.value, "switchblade");
 					const prompts = Array.isArray(switchbladeSection?.prompts) ? switchbladeSection.prompts : [];
 					const installedSkills = Array.isArray(switchbladeSection?.installedSkills) ? switchbladeSection.installedSkills.map((s) => ({
@@ -2480,7 +3052,6 @@ window.__ModuleLoader__.load({
 					this.store.set({
 						status: "ready",
 						skills,
-						presets,
 						commands: [],
 						prompts,
 						installedSkills,
@@ -2674,15 +3245,6 @@ window.__ModuleLoader__.load({
 				await new Promise((r) => setTimeout(r, 500));
 				await this.load();
 			}
-			/** Set the default prompt preset. */
-			async setDefaultPreset(id) {
-				const res = await this.api.settings.update({
-					ns: "agent-presets",
-					patch: { default: id }
-				});
-				if (!res.result.ok) throw new Error(res.result.error.message);
-				await this.load();
-			}
 			/** Add a new MCP server config. */
 			async addMcpServer(config) {
 				const next = [...this.currentMcpServers(), config];
@@ -2799,7 +3361,6 @@ window.__ModuleLoader__.load({
 				inject: () => ({
 					hooks: { switchblade: controller.store },
 					load: () => controller.load(),
-					setDefaultPreset: (id) => controller.setDefaultPreset(id),
 					addPrompt: (input) => controller.addPrompt(input),
 					updatePrompt: (id, patch) => controller.updatePrompt(id, patch),
 					setPromptEnabled: (id, enabled) => controller.setPromptEnabled(id, enabled),

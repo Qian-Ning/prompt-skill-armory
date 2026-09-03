@@ -6,6 +6,14 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.9.0] - 2026-08
+
+### 变更 · Changed
+- **移除 Agent 预设 tab** 及相关 UI/状态/注入。
+  Removed the Agent Presets tab and related UI/state/injection.
+- **使用统计全面升级**（对齐 cc-switch）：时间范围筛选（全部/30天/7天/今天）、输入/输出/缓存读/缓存写 Token、缓存命中率、成本估算、请求日志（时间/项目/模型/输入输出/缓存/成本/用时/首字/状态）、Provider（项目）统计、模型统计、SVG 双轴趋势图，今天按 24 小时分段。
+  Usage stats overhaul (cc-switch style): range filter, input/output/cache tokens, cache-hit rate, cost estimate, request log, provider/project stats, model stats, SVG dual-axis trend chart (24h split for today).
+
 ## [0.8.3] - 2026-08
 
 ### 新增 · Added

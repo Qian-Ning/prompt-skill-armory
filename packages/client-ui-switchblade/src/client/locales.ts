@@ -8,7 +8,7 @@ export const NS = 'settings.switchblade'
 
 /** Keys translated by this plugin. */
 export type SwitchbladeKey =
-  | 'nav' | 'skillsTitle' | 'presetsTitle' | 'promptsTitle' | 'commandsTitle'
+  | 'nav' | 'skillsTitle' | 'promptsTitle' | 'commandsTitle'
   | 'empty' | 'enabled' | 'disabled' | 'installed'
   | 'refresh' | 'setDefault' | 'loadFailed'
   | 'globalHint' | 'promptNamePlaceholder' | 'promptDescPlaceholder' | 'promptContentPlaceholder'
@@ -16,14 +16,13 @@ export type SwitchbladeKey =
   | 'installSkill' | 'skillNamePlaceholder' | 'skillDescPlaceholder' | 'skillContentPlaceholder'
   | 'install' | 'uninstall' | 'pickSkillFile' | 'searchPlaceholder'
   | 'installedSkills' | 'installedSkillsGoRight' | 'manage'
-  | 'localSkills' | 'agentPresetsTitle' | 'edit' | 'save' | 'cancel' | 'addSkill'
+  | 'localSkills' | 'edit' | 'save' | 'cancel' | 'addSkill'
   | 'pickZipFile' | 'cliHint'
 
 /** zh-CN copy. */
 export const zh: Record<SwitchbladeKey, string> = {
   nav: 'Armory',
   skillsTitle: '技能',
-  presetsTitle: '提示词预设',
   promptsTitle: '提示词',
   commandsTitle: '命令',
   empty: '(空)',
@@ -53,7 +52,6 @@ export const zh: Record<SwitchbladeKey, string> = {
   installedSkillsGoRight: '已安装的技能在右侧第四列管理',
   manage: '托管',
   localSkills: '本地扫描技能',
-  agentPresetsTitle: 'Agent预设',
   edit: '编辑',
   save: '保存',
   cancel: '取消',
@@ -66,7 +64,6 @@ export const zh: Record<SwitchbladeKey, string> = {
 export const en: Record<SwitchbladeKey, string> = {
   nav: 'Armory',
   skillsTitle: 'Skills',
-  presetsTitle: 'Prompt Presets',
   promptsTitle: 'Prompts',
   commandsTitle: 'Commands',
   empty: '(empty)',
@@ -96,7 +93,6 @@ export const en: Record<SwitchbladeKey, string> = {
   installedSkillsGoRight: 'Installed skills are managed in the right column',
   manage: 'Manage',
   localSkills: 'Scanned skills',
-  agentPresetsTitle: 'Agent Presets',
   edit: 'Edit',
   save: 'Save',
   cancel: 'Cancel',

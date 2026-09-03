@@ -22,7 +22,7 @@ import { backgroundClient, initBackgroundClient, applyBackground, applyHintStyle
 export { SwitchbladeSection } from './SwitchbladeSection.tsx'
 export type { SwitchbladeSectionInjected, SwitchbladeSectionProps } from './SwitchbladeSection.tsx'
 export { SwitchbladeSectionController } from './store.ts'
-export type { SwitchbladeSectionState, SkillRow, PresetRow } from './store.ts'
+export type { SwitchbladeSectionState, SkillRow } from './store.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -74,7 +74,6 @@ export function apply(ctx: ClientContext): void {
     inject: (): SwitchbladeSectionInjected => ({
       hooks: { switchblade: controller.store },
       load: () => controller.load(),
-      setDefaultPreset: (id: string) => controller.setDefaultPreset(id),
       addPrompt: (input) => controller.addPrompt(input),
       updatePrompt: (id, patch) => controller.updatePrompt(id, patch),
       setPromptEnabled: (id, enabled) => controller.setPromptEnabled(id, enabled),

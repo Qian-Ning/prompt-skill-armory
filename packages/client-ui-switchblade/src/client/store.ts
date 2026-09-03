@@ -1,6 +1,6 @@
 /**
  * Switchblade section data controller: reads the skill catalog and the prompt
- * preset roster through the existing connection RPC surface (no Typert
+ * roster through the existing connection RPC surface (no Typert
  * generation needed — these methods are already wired).
  * @module @deepseek-ai/dsh-client-ui-switchblade
  */
@@ -13,16 +13,6 @@ export interface SkillRow {
   readonly name: string
   readonly description: string
   readonly modelInvocable: boolean
-}
-
-/** A prompt-preset row as reported by agentPreset.list. */
-export interface PresetRow {
-  readonly id: string
-  readonly name?: string
-  readonly description?: string
-  readonly isDefault: boolean
-  readonly trust: string
-  readonly broken?: string
 }
 
 /** A command row (not yet wired to an RPC; kept for the section's third group). */
@@ -74,7 +64,6 @@ export interface SwitchbladeSectionState {
   readonly status: 'idle' | 'loading' | 'ready' | 'error'
   readonly message?: string
   readonly skills: readonly SkillRow[]
-  readonly presets: readonly PresetRow[]
   readonly commands: readonly CommandRow[]
   readonly prompts: readonly PromptRow[]
   readonly installedSkills: readonly InstalledSkillRow[]
@@ -85,7 +74,6 @@ export interface SwitchbladeSectionState {
 const IDLE: SwitchbladeSectionState = {
   status: 'idle',
   skills: [],
-  presets: [],
   commands: [],
   prompts: [],
   installedSkills: [],
@@ -107,7 +95,7 @@ export class SwitchbladeSectionController {
   ) {}
 
   /**
-   * Load skills, presets, prompts, and installed skills. Prompts and installed
+   * Load skills, prompts, and installed skills. Prompts and installed
    * skills come from the `switchblade` settings namespace (the Host watches
    * it and re-injects on change).
    */
@@ -115,19 +103,16 @@ export class SwitchbladeSectionController {
     this.store.set({ ...IDLE, status: 'loading' })
     try {
       // skill.list requires a live session; without one we skip it (never
-      // hang). Presets + settings always resolve, so the panel opens reliably.
+      // hang). Settings always resolve, so the panel opens reliably.
       const sessionId = this.sessionId?.()
       const calls: Promise<unknown>[] = [
-        this.api.agentPresets.list({}),
         this.api.settings.describe({}),
       ]
       if (sessionId !== undefined) calls.push(this.api.skills.list({ sessionId }))
-      const [presetRes, settingsRes, skillRes] = await Promise.all(calls) as [
-        Awaited<ReturnType<ConnectionHandle['api']['agentPresets']['list']>>,
+      const [settingsRes, skillRes] = await Promise.all(calls) as [
         Awaited<ReturnType<ConnectionHandle['api']['settings']['describe']>>,
         Awaited<ReturnType<ConnectionHandle['api']['skills']['list']>> | undefined,
       ]
-      if (!presetRes.result.ok) throw new Error(`agentPreset.list: ${presetRes.result.error.message}`)
       if (!settingsRes.result.ok) throw new Error(`settings.describe: ${settingsRes.result.error.message}`)
 
       const skills: SkillRow[] = skillRes !== undefined && skillRes.result.ok
@@ -137,15 +122,6 @@ export class SwitchbladeSectionController {
           modelInvocable: skill.modelInvocable,
         }))
         : []
-
-      const presets: PresetRow[] = presetRes.result.value.presets.map((preset) => ({
-        id: preset.id,
-        isDefault: preset.isDefault,
-        trust: preset.trust,
-        ...preset.name === undefined ? {} : { name: preset.name },
-        ...preset.description === undefined ? {} : { description: preset.description },
-        ...preset.broken === undefined ? {} : { broken: preset.broken },
-      }))
 
       const switchbladeSection = this.sectionFromSettings(settingsRes.result.value, 'switchblade')
       const prompts: PromptRow[] = Array.isArray(switchbladeSection?.prompts) ? switchbladeSection.prompts : []
@@ -181,7 +157,6 @@ export class SwitchbladeSectionController {
       this.store.set({
         status: 'ready',
         skills,
-        presets,
         commands: [],
         prompts,
         installedSkills,
@@ -357,13 +332,6 @@ export class SwitchbladeSectionController {
     await this.load()
   }
 
-  /** Set the default prompt preset. */
-  async setDefaultPreset(id: string): Promise<void> {
-    const res = await this.api.settings.update({ ns: 'agent-presets', patch: { default: id } })
-    if (!res.result.ok) throw new Error(res.result.error.message)
-    await this.load()
-  }
-
   // ---------------------------------------------------------------------------
   // MCP server management (writes to the switchblade settings namespace; the
   // Host watch auto-starts/stops the mcp-client instances)
@@ -431,7 +399,6 @@ export interface SwitchbladeSectionInjected {
     switchblade: SnapshotStore<SwitchbladeSectionState>
   }
   load: () => Promise<void>
-  setDefaultPreset: (id: string) => Promise<void>
   addPrompt: (input: { name: string; description: string; content: string }) => Promise<void>
   updatePrompt: (id: string, patch: { name?: string; description?: string; content?: string }) => Promise<void>
   setPromptEnabled: (id: string, enabled: boolean) => Promise<void>

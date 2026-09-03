@@ -389,6 +389,226 @@ async function listConversations() {
 function validName(name) {
 	return /^[a-zA-Z0-9._-]+$/.test(name);
 }
+/** Simple default pricing (USD per 1M tokens); mirrors common API pricing. */
+const PRICING = {
+	inputPerM: .3,
+	outputPerM: 1.2,
+	cacheReadPerM: .03,
+	cacheWritePerM: .6
+};
+function costOf(t) {
+	return t.uncachedInputTokens / 1e6 * PRICING.inputPerM + t.outputTokens / 1e6 * PRICING.outputPerM + t.cacheReadTokens / 1e6 * PRICING.cacheReadPerM + t.cacheWriteTokens / 1e6 * PRICING.cacheWritePerM;
+}
+function hitRateOf(t) {
+	const total = t.uncachedInputTokens + t.cacheReadTokens + t.cacheWriteTokens;
+	return total > 0 ? t.cacheReadTokens / total : 0;
+}
+/** Resolve a time-range cutoff (ms epoch) for the `range` query param. */
+function rangeCutoff(range) {
+	const now = Date.now();
+	switch (range) {
+		case "today": {
+			const d = /* @__PURE__ */ new Date();
+			d.setHours(0, 0, 0, 0);
+			return d.getTime();
+		}
+		case "7d": return now - 7 * 864e5;
+		case "30d": return now - 30 * 864e5;
+		default: return 0;
+	}
+}
+const zeroTokens = () => ({
+	uncachedInputTokens: 0,
+	outputTokens: 0,
+	cacheReadTokens: 0,
+	cacheWriteTokens: 0
+});
+async function collectStats(range = "all") {
+	const cutoff = rangeCutoff(range);
+	const byDay = /* @__PURE__ */ new Map();
+	const byProject = /* @__PURE__ */ new Map();
+	const byModel = /* @__PURE__ */ new Map();
+	const recent = [];
+	const byHour = /* @__PURE__ */ new Map();
+	const totals = {
+		sessions: 0,
+		turns: 0,
+		steps: 0,
+		llmMs: 0,
+		toolMs: 0,
+		inputTokens: 0,
+		outputTokens: 0,
+		cacheReadTokens: 0,
+		cacheWriteTokens: 0,
+		ttftMs: 0,
+		ttftSteps: 0,
+		decodeMs: 0,
+		costUsd: 0
+	};
+	try {
+		const rows = JSON.parse(await readFile(join(STORAGES_ROOT, "session_projcache.json"), "utf8")).tables?.sessions ?? {};
+		for (const [id, v] of Object.entries(rows)) {
+			const sv = v.rows?.sessionStats?.val;
+			if (sv === void 0 || (sv.steps ?? 0) === 0) continue;
+			const created = v.identity?.createdAt ?? 0;
+			if (created < cutoff) continue;
+			const t = v.rows?.tokenUsage?.val?.totals ?? zeroTokens();
+			const turns = sv.turns ?? 0;
+			const steps = sv.steps ?? 0;
+			const llmMs = sv.llmMs ?? 0;
+			const toolMs = sv.toolMs ?? 0;
+			const ttftMs = sv.ttftMs ?? 0;
+			const ttftSteps = sv.ttftSteps ?? 0;
+			const decodeMs = sv.decodeMs ?? 0;
+			const cost = costOf(t);
+			totals.sessions++;
+			totals.turns += turns;
+			totals.steps += steps;
+			totals.llmMs += llmMs;
+			totals.toolMs += toolMs;
+			totals.inputTokens += t.uncachedInputTokens;
+			totals.outputTokens += t.outputTokens;
+			totals.cacheReadTokens += t.cacheReadTokens;
+			totals.cacheWriteTokens += t.cacheWriteTokens;
+			totals.ttftMs += ttftMs;
+			totals.ttftSteps += ttftSteps;
+			totals.decodeMs += decodeMs;
+			totals.costUsd += cost;
+			const date = created > 0 ? new Date(created).toISOString().slice(0, 10) : "未知";
+			const d = byDay.get(date) ?? {
+				date,
+				sessions: 0,
+				turns: 0,
+				steps: 0,
+				llmMs: 0,
+				toolMs: 0,
+				inputTokens: 0,
+				outputTokens: 0,
+				cacheReadTokens: 0,
+				cacheWriteTokens: 0
+			};
+			d.sessions++;
+			d.turns += turns;
+			d.steps += steps;
+			d.llmMs += llmMs;
+			d.toolMs += toolMs;
+			d.inputTokens += t.uncachedInputTokens;
+			d.outputTokens += t.outputTokens;
+			d.cacheReadTokens += t.cacheReadTokens;
+			d.cacheWriteTokens += t.cacheWriteTokens;
+			byDay.set(date, d);
+			const hour = created > 0 ? new Date(created).getHours() : 0;
+			const hb = byHour.get(hour) ?? {
+				hour,
+				steps: 0,
+				outputTokens: 0,
+				inputTokens: 0,
+				cacheReadTokens: 0,
+				cacheWriteTokens: 0
+			};
+			hb.steps += steps;
+			hb.outputTokens += t.outputTokens;
+			hb.inputTokens += t.uncachedInputTokens;
+			hb.cacheReadTokens += t.cacheReadTokens;
+			hb.cacheWriteTokens += t.cacheWriteTokens;
+			byHour.set(hour, hb);
+			const cwd = v.identity?.cwd ?? "";
+			const project = cwd.split(/[\\/]/).filter(Boolean).pop() || cwd || "未知";
+			const pr = byProject.get(project) ?? {
+				project,
+				sessions: 0,
+				steps: 0,
+				llmMs: 0,
+				toolMs: 0,
+				inputTokens: 0,
+				outputTokens: 0,
+				cacheReadTokens: 0,
+				cacheWriteTokens: 0,
+				costUsd: 0
+			};
+			pr.sessions++;
+			pr.steps += steps;
+			pr.llmMs += llmMs;
+			pr.toolMs += toolMs;
+			pr.inputTokens += t.uncachedInputTokens;
+			pr.outputTokens += t.outputTokens;
+			pr.cacheReadTokens += t.cacheReadTokens;
+			pr.cacheWriteTokens += t.cacheWriteTokens;
+			pr.costUsd += cost;
+			byProject.set(project, pr);
+			const model = v.rows?.title?.val && v.rows.title.val.startsWith("model:") ? v.rows.title.val.slice(6) : "default";
+			const mo = byModel.get(model) ?? {
+				model,
+				sessions: 0,
+				steps: 0,
+				inputTokens: 0,
+				outputTokens: 0,
+				costUsd: 0,
+				cacheReadTokens: 0,
+				cacheWriteTokens: 0
+			};
+			mo.sessions++;
+			mo.steps += steps;
+			mo.inputTokens += t.uncachedInputTokens;
+			mo.outputTokens += t.outputTokens;
+			mo.costUsd += cost;
+			mo.cacheReadTokens += t.cacheReadTokens;
+			mo.cacheWriteTokens += t.cacheWriteTokens;
+			byModel.set(model, mo);
+			recent.push({
+				time: created,
+				provider: project,
+				model,
+				inputTokens: t.uncachedInputTokens,
+				outputTokens: t.outputTokens,
+				cacheReadTokens: t.cacheReadTokens,
+				cacheWriteTokens: t.cacheWriteTokens,
+				cacheHitRate: hitRateOf(t),
+				costUsd: cost,
+				latencyMs: llmMs,
+				firstTokenMs: ttftSteps > 0 ? ttftMs / ttftSteps : 0,
+				status: sv.openStep === null ? "done" : "running",
+				source: "dsh"
+			});
+		}
+	} catch {}
+	const totalTokensAll = totals.inputTokens + totals.outputTokens + totals.cacheReadTokens + totals.cacheWriteTokens;
+	const cacheHitRate = totalTokensAll > 0 ? totals.cacheReadTokens / totalTokensAll : 0;
+	const avgTtftMs = totals.ttftSteps > 0 ? totals.ttftMs / totals.ttftSteps : 0;
+	const tokPerSec = totals.decodeMs > 0 ? totals.outputTokens / (totals.decodeMs / 1e3) : 0;
+	const perSessionSteps = totals.sessions > 0 ? totals.steps / totals.sessions : 0;
+	return {
+		range,
+		totals: {
+			...totals,
+			avgTtftMs,
+			tokPerSec,
+			perSessionSteps,
+			activeDays: byDay.size,
+			cacheHitRate
+		},
+		byDay: [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date)),
+		byHour: range === "today" ? Array.from({ length: 24 }, (_, h) => byHour.get(h) ?? {
+			hour: h,
+			steps: 0,
+			outputTokens: 0,
+			inputTokens: 0,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0
+		}) : [],
+		byProject: [...byProject.values()].map((p) => ({
+			...p,
+			successRate: 100,
+			avgLatencyMs: p.steps > 0 ? p.llmMs / p.steps : 0,
+			cacheHitRate: p.inputTokens + p.cacheReadTokens + p.cacheWriteTokens > 0 ? p.cacheReadTokens / (p.inputTokens + p.cacheReadTokens + p.cacheWriteTokens) : 0
+		})).sort((a, b) => b.steps - a.steps),
+		byModel: [...byModel.values()].map((m) => ({
+			...m,
+			cacheHitRate: m.inputTokens + m.cacheReadTokens + m.cacheWriteTokens > 0 ? m.cacheReadTokens / (m.inputTokens + m.cacheReadTokens + m.cacheWriteTokens) : 0
+		})).sort((a, b) => b.steps - a.steps),
+		recent: recent.sort((a, b) => b.time - a.time).slice(0, 30)
+	};
+}
 /** Resolve a conversation id of the form `<projectKey>/<sessionId>`. */
 function resolveSession(key, id) {
 	if (!/^[a-zA-Z0-9._-]+$/.test(key) || !/^session-[a-f0-9-]+$/.test(id)) return void 0;
@@ -509,6 +729,27 @@ async function importArchive(zipPath, targetProjectKey) {
 }
 function makeConversationRoutes() {
 	return [
+		{
+			kind: "exact",
+			path: `${PREFIX}/stats`,
+			handler: async (req, res) => {
+				if (!sameOrigin(req)) {
+					json(res, 403, {
+						ok: false,
+						error: "rejected"
+					});
+					return;
+				}
+				if (req.method !== "GET") {
+					json(res, 405, { ok: false });
+					return;
+				}
+				json(res, 200, {
+					ok: true,
+					...await collectStats(new URL(req.url ?? "/", "http://localhost").searchParams.get("range") ?? "all")
+				});
+			}
+		},
 		{
 			kind: "exact",
 			path: `${PREFIX}/sessions`,

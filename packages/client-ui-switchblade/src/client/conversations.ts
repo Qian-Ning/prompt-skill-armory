@@ -78,6 +78,49 @@ export function isOlder(a: string, b: string): boolean {
   return false
 }
 
+/** One request-log row (cc-switch style). */
+export interface UsageLogRow {
+  time: number
+  provider: string
+  model: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  cacheHitRate: number
+  costUsd: number
+  latencyMs: number
+  firstTokenMs: number
+  status: string
+  source: string
+}
+
+/** Session-level usage stats (mirrors the Host aggregate). */
+export interface UsageStats {
+  range: string
+  totals: {
+    sessions: number; turns: number; steps: number; llmMs: number; toolMs: number
+    inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number
+    ttftMs: number; ttftSteps: number; decodeMs: number; costUsd: number
+    avgTtftMs: number; tokPerSec: number; perSessionSteps: number; activeDays: number; cacheHitRate: number
+  }
+  byDay: { date: string; sessions: number; turns: number; steps: number; llmMs: number; toolMs: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }[]
+  byHour: { hour: number; steps: number; outputTokens: number; inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }[]
+  byProject: { project: string; sessions: number; steps: number; llmMs: number; toolMs: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; costUsd: number; successRate: number; avgLatencyMs: number; cacheHitRate: number }[]
+  byModel: { model: string; sessions: number; steps: number; inputTokens: number; outputTokens: number; costUsd: number; cacheHitRate: number }[]
+  recent: UsageLogRow[]
+}
+
+export async function fetchStats(range = 'all'): Promise<UsageStats | null> {
+  try {
+    const r = await fetch(`/api/armory/stats?range=${encodeURIComponent(range)}`)
+    const b = (await r.json()) as { ok: boolean } & UsageStats
+    return b.ok
+      ? { range: b.range, totals: b.totals, byDay: b.byDay, byHour: b.byHour, byProject: b.byProject, byModel: b.byModel, recent: b.recent }
+      : null
+  } catch { return null }
+}
+
 export async function importConversations(file: File, targetProject?: string): Promise<number | null> {
   try {
     const q = targetProject !== undefined && targetProject !== '' ? `?project=${encodeURIComponent(targetProject)}` : ''
