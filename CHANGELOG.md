@@ -6,6 +6,14 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.9.5] - 2026-08
+
+### 新增 · Added
+- 使用统计折线图实时刷新：统计标签页打开时每 30 秒自动轮询当前范围（今天 / 7天 / 30天 / 全部），并在标题旁显示「上次更新」时间；切换范围立即拉取最新数据。
+  Usage-stats chart now live-refreshes: while the stats tab is open it polls the active range (today / 7d / 30d / all) every 30 seconds, shows the last-updated time next to the title, and fetches instantly when switching ranges.
+- 所有范围的按日折线都补全到今天（缺的日期补 0），7 天 / 30 天 / 全部的趋势线尾巴始终顶到最新使用状态；Host 端加 4 秒 TTL 缓存避免轮询反复读盘。
+  Daily trend lines for every range are now padded through today (missing days filled with 0), so the 7d / 30d / all lines always reach the latest usage; the Host adds a 4s TTL cache so polling does not re-read the projcache every tick.
+
 ## [0.9.4] - 2026-08
 
 ### 修复 · Fixed

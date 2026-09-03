@@ -415,6 +415,47 @@ function localDate(ms) {
 	const p = (n) => String(n).padStart(2, "0");
 	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
+/** Every local `YYYY-MM-DD` from start to end, inclusive. */
+function dayRange(startMs, endMs) {
+	const out = [];
+	const s = new Date(startMs);
+	const start = new Date(s.getFullYear(), s.getMonth(), s.getDate());
+	const e = new Date(endMs);
+	const end = new Date(e.getFullYear(), e.getMonth(), e.getDate());
+	for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+		const p = (n) => String(n).padStart(2, "0");
+		out.push(`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`);
+	}
+	return out;
+}
+const zeroDay = (date) => ({
+	date,
+	sessions: 0,
+	turns: 0,
+	steps: 0,
+	llmMs: 0,
+	toolMs: 0,
+	inputTokens: 0,
+	outputTokens: 0,
+	cacheReadTokens: 0,
+	cacheWriteTokens: 0
+});
+/** Fill missing days with zeroes so every range's line reaches today (live tail). */
+function filledByDay(byDay, range) {
+	const now = Date.now();
+	let startMs;
+	if (range === "today") {
+		const d = /* @__PURE__ */ new Date();
+		d.setHours(0, 0, 0, 0);
+		startMs = d.getTime();
+	} else if (range === "7d") startMs = now - 6 * 864e5;
+	else if (range === "30d") startMs = now - 29 * 864e5;
+	else {
+		const keys = [...byDay.keys()];
+		startMs = keys.length > 0 ? (/* @__PURE__ */ new Date(keys[0] + "T00:00:00")).getTime() : now;
+	}
+	return dayRange(startMs, now).map((date) => byDay.get(date) ?? zeroDay(date));
+}
 /** Simple default pricing (USD per 1M tokens); mirrors common API pricing. */
 const PRICING = {
 	inputPerM: .3,
@@ -422,6 +463,10 @@ const PRICING = {
 	cacheReadPerM: .03,
 	cacheWritePerM: .6
 };
+/** Stats response cache: the client polls every ~30s, so short-TTL caching
+* keeps the chart live without re-reading the projcache on every tick. */
+const STATS_TTL_MS = 4e3;
+let statsCache = null;
 function costOf(t) {
 	return t.uncachedInputTokens / 1e6 * PRICING.inputPerM + t.outputTokens / 1e6 * PRICING.outputPerM + t.cacheReadTokens / 1e6 * PRICING.cacheReadPerM + t.cacheWriteTokens / 1e6 * PRICING.cacheWritePerM;
 }
@@ -614,7 +659,7 @@ async function collectStats(range = "all") {
 			activeDays: byDay.size,
 			cacheHitRate
 		},
-		byDay: [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date)),
+		byDay: filledByDay(byDay, range),
 		byHour: range === "today" ? Array.from({ length: 24 }, (_, h) => byHour.get(h) ?? {
 			hour: h,
 			steps: 0,
@@ -635,6 +680,18 @@ async function collectStats(range = "all") {
 		})).sort((a, b) => b.steps - a.steps),
 		recent: recent.sort((a, b) => b.time - a.time).slice(0, 30)
 	};
+}
+/** Stats with a short-TTL cache (the client polls every ~30s). */
+async function collectStatsCached(range = "all") {
+	const now = Date.now();
+	if (statsCache !== null && statsCache.key === range && now - statsCache.at < STATS_TTL_MS) return statsCache.data;
+	const data = await collectStats(range);
+	statsCache = {
+		key: range,
+		at: now,
+		data
+	};
+	return data;
 }
 /** Resolve a conversation id of the form `<projectKey>/<sessionId>`. */
 function resolveSession(key, id) {
@@ -886,7 +943,7 @@ function makeConversationRoutes() {
 				}
 				json(res, 200, {
 					ok: true,
-					...await collectStats(new URL(req.url ?? "/", "http://localhost").searchParams.get("range") ?? "all")
+					...await collectStatsCached(new URL(req.url ?? "/", "http://localhost").searchParams.get("range") ?? "all")
 				});
 			}
 		},

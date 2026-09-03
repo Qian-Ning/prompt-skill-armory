@@ -331,7 +331,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
 type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'chat' | 'stats'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.9.4'
+const ARMORY_VERSION = '0.9.5'
 
 /** Compact duration: 45.2s / 2m42s / 1h05m. */
 function fmtDuration(ms: number): string {
@@ -564,9 +564,25 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
   // Usage stats
   const [stats, setStats] = useState<UsageStats | null>(null)
   const [statsRange, setStatsRange] = useState('all')
+  const [statsUpdatedAt, setStatsUpdatedAt] = useState(0)
 
-  const reloadStats = async (): Promise<void> => { setStats(await fetchStats(statsRange)) }
-  const changeStatsRange = (r: string): void => { setStatsRange(r); void fetchStats(r).then(setStats) }
+  // Live refresh: poll the current range every 30s while the stats tab is open
+  // (the host caches for 4s, so polling is cheap). Keeps the chart and totals
+  // tracking the latest usage for today/7d/30d/all alike.
+  const reloadStats = async (): Promise<void> => {
+    const s = await fetchStats(statsRange)
+    if (s !== null) { setStats(s); setStatsUpdatedAt(Date.now()) }
+  }
+  const changeStatsRange = (r: string): void => {
+    setStatsRange(r)
+    void fetchStats(r).then((s) => { if (s !== null) { setStats(s); setStatsUpdatedAt(Date.now()) } })
+  }
+  useEffect(() => {
+    if (activeTab !== 'stats') return
+    const timer = setInterval(() => { void reloadStats() }, 30000)
+    return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, statsRange])
 
   useEffect(() => {
     void checkLatestVersion().then((v) => { if (v !== '') setLatestVer(v) })
@@ -1182,7 +1198,14 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
           <>
             <div style={CSS.form}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' as const }}>
-                <span style={{ fontSize: '13px', fontWeight: 600 }}>使用统计</span>
+                <span style={{ fontSize: '13px', fontWeight: 600 }}>
+                  使用统计
+                  {statsUpdatedAt > 0 && (
+                    <span style={{ ...CSS.hint, marginLeft: '8px', fontWeight: 400 }}>
+                      自动刷新 · 上次更新 {new Date(statsUpdatedAt).toLocaleTimeString()}
+                    </span>
+                  )}
+                </span>
                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                   {(['all', '30d', '7d', 'today'] as const).map((r) => (
                     <button key={r} style={{ ...CSS.actionBtn, ...(statsRange === r ? CSS.tabActive : {}) }} onClick={() => changeStatsRange(r)}>

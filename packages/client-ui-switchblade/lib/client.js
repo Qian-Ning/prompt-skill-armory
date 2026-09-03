@@ -947,7 +947,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.9.4";
+		const ARMORY_VERSION = "0.9.5";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;
@@ -1287,13 +1287,30 @@ window.__ModuleLoader__.load({
 			const [updateMsg, setUpdateMsg] = (0, react.useState)("");
 			const [stats, setStats] = (0, react.useState)(null);
 			const [statsRange, setStatsRange] = (0, react.useState)("all");
+			const [statsUpdatedAt, setStatsUpdatedAt] = (0, react.useState)(0);
 			const reloadStats = async () => {
-				setStats(await fetchStats(statsRange));
+				const s = await fetchStats(statsRange);
+				if (s !== null) {
+					setStats(s);
+					setStatsUpdatedAt(Date.now());
+				}
 			};
 			const changeStatsRange = (r) => {
 				setStatsRange(r);
-				fetchStats(r).then(setStats);
+				fetchStats(r).then((s) => {
+					if (s !== null) {
+						setStats(s);
+						setStatsUpdatedAt(Date.now());
+					}
+				});
 			};
+			(0, react.useEffect)(() => {
+				if (activeTab !== "stats") return;
+				const timer = setInterval(() => {
+					reloadStats();
+				}, 3e4);
+				return () => clearInterval(timer);
+			}, [activeTab, statsRange]);
 			(0, react.useEffect)(() => {
 				checkLatestVersion().then((v) => {
 					if (v !== "") setLatestVer(v);
@@ -2653,12 +2670,19 @@ window.__ModuleLoader__.load({
 											gap: "8px",
 											flexWrap: "wrap"
 										},
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 											style: {
 												fontSize: "13px",
 												fontWeight: 600
 											},
-											children: "使用统计"
+											children: ["使用统计", statsUpdatedAt > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+												style: {
+													...CSS.hint,
+													marginLeft: "8px",
+													fontWeight: 400
+												},
+												children: ["自动刷新 · 上次更新 ", new Date(statsUpdatedAt).toLocaleTimeString()]
+											})]
 										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											style: {
 												display: "flex",

@@ -271,9 +271,48 @@ function localDate(ms: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
+/** Every local `YYYY-MM-DD` from start to end, inclusive. */
+function dayRange(startMs: number, endMs: number): string[] {
+  const out: string[] = []
+  const s = new Date(startMs)
+  const start = new Date(s.getFullYear(), s.getMonth(), s.getDate())
+  const e = new Date(endMs)
+  const end = new Date(e.getFullYear(), e.getMonth(), e.getDate())
+  for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const p = (n: number): string => String(n).padStart(2, '0')
+    out.push(`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`)
+  }
+  return out
+}
+
+type DayAgg = { date: string; sessions: number; turns: number; steps: number; llmMs: number; toolMs: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }
+
+const zeroDay = (date: string): DayAgg => ({ date, sessions: 0, turns: 0, steps: 0, llmMs: 0, toolMs: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
+
+/** Fill missing days with zeroes so every range's line reaches today (live tail). */
+function filledByDay(byDay: Map<string, DayAgg>, range: string): DayAgg[] {
+  const now = Date.now()
+  let startMs: number
+  if (range === 'today') {
+    const d = new Date(); d.setHours(0, 0, 0, 0); startMs = d.getTime()
+  } else if (range === '7d') {
+    startMs = now - 6 * 86400000
+  } else if (range === '30d') {
+    startMs = now - 29 * 86400000
+  } else { // all: earliest recorded day (or today when empty)
+    const keys = [...byDay.keys()]
+    startMs = keys.length > 0 ? new Date(keys[0] + 'T00:00:00').getTime() : now
+  }
+  return dayRange(startMs, now).map((date) => byDay.get(date) ?? zeroDay(date))
+}
+
 /** Simple default pricing (USD per 1M tokens); mirrors common API pricing. */
 const PRICING = { inputPerM: 0.3, outputPerM: 1.2, cacheReadPerM: 0.03, cacheWritePerM: 0.6 }
 
+/** Stats response cache: the client polls every ~30s, so short-TTL caching
+ * keeps the chart live without re-reading the projcache on every tick. */
+const STATS_TTL_MS = 4000
+let statsCache: { key: string; at: number; data: UsageStats } | null = null
 function costOf(t: TokenUsage): number {
   return (t.uncachedInputTokens / 1e6 * PRICING.inputPerM)
     + (t.outputTokens / 1e6 * PRICING.outputPerM)
@@ -388,7 +427,7 @@ async function collectStats(range = 'all'): Promise<UsageStats> {
     totals: {
       ...totals, avgTtftMs, tokPerSec, perSessionSteps, activeDays: byDay.size, cacheHitRate,
     },
-    byDay: [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date)),
+    byDay: filledByDay(byDay, range),
     byHour: range === 'today'
       ? Array.from({ length: 24 }, (_, h) => byHour.get(h) ?? { hour: h, steps: 0, outputTokens: 0, inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
       : [],
@@ -408,6 +447,17 @@ async function collectStats(range = 'all'): Promise<UsageStats> {
       .sort((a, b) => b.steps - a.steps),
     recent: recent.sort((a, b) => b.time - a.time).slice(0, 30),
   }
+}
+
+/** Stats with a short-TTL cache (the client polls every ~30s). */
+async function collectStatsCached(range = 'all'): Promise<UsageStats> {
+  const now = Date.now()
+  if (statsCache !== null && statsCache.key === range && now - statsCache.at < STATS_TTL_MS) {
+    return statsCache.data
+  }
+  const data = await collectStats(range)
+  statsCache = { key: range, at: now, data }
+  return data
 }
 
 /** Resolve a conversation id of the form `<projectKey>/<sessionId>`. */
@@ -652,7 +702,7 @@ export function makeConversationRoutes(): WebRoute[] {
         if (!sameOrigin(req)) { json(res, 403, { ok: false, error: 'rejected' }); return }
         if (req.method !== 'GET') { json(res, 405, { ok: false }); return }
         const range = new URL(req.url ?? '/', 'http://localhost').searchParams.get('range') ?? 'all'
-        json(res, 200, { ok: true, ...(await collectStats(range)) })
+        json(res, 200, { ok: true, ...(await collectStatsCached(range)) })
       },
     },
     {
