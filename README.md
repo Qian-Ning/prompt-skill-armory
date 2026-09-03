@@ -11,13 +11,13 @@
 | <img src="docs/preview/preview-2.png" width="220"/> | <img src="docs/preview/preview-3.png" width="220"/> | <img src="docs/preview/preview-4.png" width="220"/> | <img src="docs/preview/preview-5.png" width="220"/> |
 |--|--|--|--|
 
-![version](https://img.shields.io/badge/version-0.8.2-00ff9c)
+![version](https://img.shields.io/badge/version-0.8.3-00ff9c)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![platform](https://img.shields.io/badge/platform-web%20%2B%20desktop-00ff9c)
 ![CI](https://github.com/Qian-Ning/prompt-skill-armory/actions/workflows/ci.yml/badge.svg)
 
 ```
-✦ Armory  v0.8.2
+✦ Armory  v0.8.3
 ┌─────────┬─────────┬─────┬────────────┬─────────┐
 │ 提示词    │  技能    │ MCP │  Wallpaper │ 预设     │
 │ 全局注入  │ 合并管理  │ 连接 │  壁纸·特效  │ roster  │

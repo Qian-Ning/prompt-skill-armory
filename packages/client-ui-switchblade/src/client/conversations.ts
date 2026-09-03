@@ -49,6 +49,35 @@ export async function deleteConversations(ids: string[]): Promise<number | null>
   } catch { return null }
 }
 
+/** Query the npm registry for the latest published prompt-skill-armory version. */
+export async function checkLatestVersion(): Promise<string> {
+  try {
+    const r = await fetch('/api/armory/version')
+    const b = (await r.json()) as { ok: boolean; latest?: string }
+    return b.ok ? (b.latest ?? '') : ''
+  } catch { return '' }
+}
+
+/** Trigger an in-place update (runs the installer, which reinstalls the plugin). */
+export async function runUpdate(): Promise<boolean> {
+  try {
+    const r = await fetch('/api/armory/update', { method: 'POST' })
+    const b = (await r.json()) as { ok: boolean }
+    return b.ok === true
+  } catch { return false }
+}
+
+/** Compare dotted versions; true when `a` is older than `b`. */
+export function isOlder(a: string, b: string): boolean {
+  const pa = a.split('.').map((n) => Number(n) || 0)
+  const pb = b.split('.').map((n) => Number(n) || 0)
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] ?? 0; const y = pb[i] ?? 0
+    if (x !== y) return x < y
+  }
+  return false
+}
+
 export async function importConversations(file: File, targetProject?: string): Promise<number | null> {
   try {
     const q = targetProject !== undefined && targetProject !== '' ? `?project=${encodeURIComponent(targetProject)}` : ''

@@ -90,6 +90,7 @@ export function apply(ctx: ClientContext): void {
       toggleMcpServer: (name, enabled) => controller.toggleMcpServer(name, enabled),
       removeMcpServer: (name) => controller.removeMcpServer(name),
       testMcpServer: (name) => controller.testMcpServer(name),
+      refreshSessions: () => { (sessions as { refresh?: () => Promise<void> }).refresh?.().catch(() => {}) },
     }),
   }, SwitchbladeSection))
 }

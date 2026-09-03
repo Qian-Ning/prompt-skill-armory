@@ -447,4 +447,6 @@ export interface SwitchbladeSectionInjected {
   toggleMcpServer: (name: string, enabled: boolean) => Promise<void>
   removeMcpServer: (name: string) => Promise<void>
   testMcpServer: (name: string) => Promise<void>
+  /** Ask the DSH session runtime to re-pull the conversation list (keeps the official UI in sync after delete/import). */
+  refreshSessions: () => void
 }

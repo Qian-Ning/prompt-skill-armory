@@ -15,7 +15,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { SwitchbladeKey } from './locales.ts'
 import type { McpServerRow, SwitchbladeSectionInjected, SwitchbladeSectionState } from './store.ts'
 import { backgroundClient, DEFAULT_BACKGROUND, applyBackground, uploadMedia, isDesktopSurface, GRADIENTS, type BackgroundSettings } from './background.ts'
-import { listConversations, exportConversations, downloadExport, importConversations, deleteConversations, type ConversationRow } from './conversations.ts'
+import { listConversations, exportConversations, downloadExport, importConversations, deleteConversations, checkLatestVersion, runUpdate, isOlder, type ConversationRow } from './conversations.ts'
 
 export type { SwitchbladeSectionInjected } from './store.ts'
 
@@ -331,7 +331,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
 type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'presets' | 'chat'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.8.2'
+const ARMORY_VERSION = '0.8.3'
 
 /** Render the Prompt-SkillArmory management page. */
 export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element {
@@ -340,6 +340,7 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt,
     installSkill, updateSkill, setSkillEnabled, uninstallSkill,
     addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer, testMcpServer,
+    refreshSessions,
   } = props
   const state = useSwitchblade((snapshot: SwitchbladeSectionState) => snapshot)
   const [promptName, setPromptName] = useState('')
@@ -438,6 +439,14 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
   const [chatTarget, setChatTarget] = useState('')
   const [chatBusy, setChatBusy] = useState(false)
   const [chatMsg, setChatMsg] = useState('')
+  // Update availability
+  const [latestVer, setLatestVer] = useState('')
+  const [updating, setUpdating] = useState(false)
+  const [updateMsg, setUpdateMsg] = useState('')
+
+  useEffect(() => {
+    void checkLatestVersion().then((v) => { if (v !== '') setLatestVer(v) })
+  }, [])
 
   const reloadChat = async (): Promise<void> => {
     setChatRows(await listConversations())
@@ -458,11 +467,19 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     setChatBusy(false)
   }
 
+  const doUpdate = async (): Promise<void> => {
+    setUpdating(true); setUpdateMsg('')
+    const ok = await runUpdate()
+    setUpdateMsg(ok ? '更新完成，请重启客户端生效' : '更新失败')
+    setUpdating(false)
+  }
+
   const onChatFile = async (file: File | undefined): Promise<void> => {
     if (file === undefined) return
     setChatBusy(true); setChatMsg('')
     const n = await importConversations(file, chatTarget.trim() || undefined)
     setChatMsg(n === null ? '导入失败' : `已导入 ${n} 个对话，重启客户端后生效`)
+    if (n !== null) { refreshSessions(); await reloadChat() }
     setChatBusy(false)
   }
 
@@ -475,6 +492,7 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     if (n === null) { setChatMsg('删除失败'); setChatBusy(false); return }
     setChatSelected(new Set())
     setChatMsg(`已删除 ${n} 个对话`)
+    refreshSessions()
     await reloadChat()
     setChatBusy(false)
   }
@@ -652,6 +670,14 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
       </div>
 
       {state.status === 'error' && <div style={CSS.error}>✖ {t('loadFailed')}: {state.message}</div>}
+
+      {latestVer !== '' && isOlder(ARMORY_VERSION, latestVer) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 12px', marginBottom: '10px', borderRadius: '8px', border: '1px solid #58a6ff', background: 'rgba(88,166,255,.08)' }}>
+          <span style={{ fontSize: '12px', color: '#58a6ff', flex: 1 }}>有新版本 v{latestVer}（当前 v{ARMORY_VERSION}）</span>
+          <button style={{ ...CSS.actionBtn, ...CSS.badgeEnabled }} disabled={updating} onClick={() => void doUpdate()}>{updating ? '更新中…' : '一键更新'}</button>
+          {updateMsg !== '' && <span style={{ ...CSS.hint }}>{updateMsg}</span>}
+        </div>
+      )}
 
       {/* Tab bar */}
       <div style={CSS.tabs}>

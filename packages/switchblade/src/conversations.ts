@@ -329,6 +329,31 @@ export function makeConversationRoutes(): WebRoute[] {
     },
     {
       kind: 'exact',
+      path: `${PREFIX}/version`,
+      handler: async (req, res) => {
+        if (!sameOrigin(req)) { json(res, 403, { ok: false, error: 'rejected' }); return }
+        if (req.method !== 'GET') { json(res, 405, { ok: false }); return }
+        try {
+          const r = await fetch('https://registry.npmjs.org/prompt-skill-armory/latest')
+          const b = (await r.json()) as { version?: string }
+          json(res, 200, { ok: true, latest: b.version ?? '' })
+        } catch { json(res, 200, { ok: true, latest: '' }) }
+      },
+    },
+    {
+      kind: 'exact',
+      path: `${PREFIX}/update`,
+      handler: async (req, res) => {
+        if (!sameOrigin(req)) { json(res, 403, { ok: false, error: 'rejected' }); return }
+        if (req.method !== 'POST') { json(res, 405, { ok: false }); return }
+        try {
+          await exec('npx.cmd', ['--yes', 'prompt-skill-armory'], { timeout: 120000 })
+          json(res, 200, { ok: true })
+        } catch (e) { json(res, 400, { ok: false, error: e instanceof Error ? e.message : String(e) }) }
+      },
+    },
+    {
+      kind: 'exact',
       path: `${PREFIX}/delete`,
       handler: async (req, res) => {
         if (!sameOrigin(req)) { json(res, 403, { ok: false, error: 'rejected' }); return }

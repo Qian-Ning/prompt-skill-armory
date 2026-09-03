@@ -564,6 +564,34 @@ window.__ModuleLoader__.load({
 				return null;
 			}
 		}
+		/** Query the npm registry for the latest published prompt-skill-armory version. */
+		async function checkLatestVersion() {
+			try {
+				const b = await (await fetch("/api/armory/version")).json();
+				return b.ok ? b.latest ?? "" : "";
+			} catch {
+				return "";
+			}
+		}
+		/** Trigger an in-place update (runs the installer, which reinstalls the plugin). */
+		async function runUpdate() {
+			try {
+				return (await (await fetch("/api/armory/update", { method: "POST" })).json()).ok === true;
+			} catch {
+				return false;
+			}
+		}
+		/** Compare dotted versions; true when `a` is older than `b`. */
+		function isOlder(a, b) {
+			const pa = a.split(".").map((n) => Number(n) || 0);
+			const pb = b.split(".").map((n) => Number(n) || 0);
+			for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+				const x = pa[i] ?? 0;
+				const y = pb[i] ?? 0;
+				if (x !== y) return x < y;
+			}
+			return false;
+		}
 		async function importConversations(file, targetProject) {
 			try {
 				const q = targetProject !== void 0 && targetProject !== "" ? `?project=${encodeURIComponent(targetProject)}` : "";
@@ -899,10 +927,10 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.8.2";
+		const ARMORY_VERSION = "0.8.3";
 		/** Render the Prompt-SkillArmory management page. */
 		function SwitchbladeSection(props) {
-			const { useSwitchblade, t, load, setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt, installSkill, updateSkill, setSkillEnabled, uninstallSkill, addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer, testMcpServer } = props;
+			const { useSwitchblade, t, load, setDefaultPreset, addPrompt, updatePrompt, setPromptEnabled, setDefaultPrompt, deletePrompt, installSkill, updateSkill, setSkillEnabled, uninstallSkill, addMcpServer, updateMcpServer, toggleMcpServer, removeMcpServer, testMcpServer, refreshSessions } = props;
 			const state = useSwitchblade((snapshot) => snapshot);
 			const [promptName, setPromptName] = (0, react.useState)("");
 			const [promptDesc, setPromptDesc] = (0, react.useState)("");
@@ -994,6 +1022,14 @@ window.__ModuleLoader__.load({
 			const [chatTarget, setChatTarget] = (0, react.useState)("");
 			const [chatBusy, setChatBusy] = (0, react.useState)(false);
 			const [chatMsg, setChatMsg] = (0, react.useState)("");
+			const [latestVer, setLatestVer] = (0, react.useState)("");
+			const [updating, setUpdating] = (0, react.useState)(false);
+			const [updateMsg, setUpdateMsg] = (0, react.useState)("");
+			(0, react.useEffect)(() => {
+				checkLatestVersion().then((v) => {
+					if (v !== "") setLatestVer(v);
+				});
+			}, []);
 			const reloadChat = async () => {
 				setChatRows(await listConversations());
 			};
@@ -1021,12 +1057,23 @@ window.__ModuleLoader__.load({
 				setChatMsg(`已导出 ${name}`);
 				setChatBusy(false);
 			};
+			const doUpdate = async () => {
+				setUpdating(true);
+				setUpdateMsg("");
+				const ok = await runUpdate();
+				setUpdateMsg(ok ? "更新完成，请重启客户端生效" : "更新失败");
+				setUpdating(false);
+			};
 			const onChatFile = async (file) => {
 				if (file === void 0) return;
 				setChatBusy(true);
 				setChatMsg("");
 				const n = await importConversations(file, chatTarget.trim() || void 0);
 				setChatMsg(n === null ? "导入失败" : `已导入 ${n} 个对话，重启客户端后生效`);
+				if (n !== null) {
+					refreshSessions();
+					await reloadChat();
+				}
 				setChatBusy(false);
 			};
 			const doDeleteChat = async () => {
@@ -1043,6 +1090,7 @@ window.__ModuleLoader__.load({
 				}
 				setChatSelected(/* @__PURE__ */ new Set());
 				setChatMsg(`已删除 ${n} 个对话`);
+				refreshSessions();
 				await reloadChat();
 				setChatBusy(false);
 			};
@@ -1273,6 +1321,47 @@ window.__ModuleLoader__.load({
 							t("loadFailed"),
 							": ",
 							state.message
+						]
+					}),
+					latestVer !== "" && isOlder(ARMORY_VERSION, latestVer) && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						style: {
+							display: "flex",
+							alignItems: "center",
+							gap: "10px",
+							padding: "8px 12px",
+							marginBottom: "10px",
+							borderRadius: "8px",
+							border: "1px solid #58a6ff",
+							background: "rgba(88,166,255,.08)"
+						},
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								style: {
+									fontSize: "12px",
+									color: "#58a6ff",
+									flex: 1
+								},
+								children: [
+									"有新版本 v",
+									latestVer,
+									"（当前 v",
+									ARMORY_VERSION,
+									"）"
+								]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								style: {
+									...CSS.actionBtn,
+									...CSS.badgeEnabled
+								},
+								disabled: updating,
+								onClick: () => void doUpdate(),
+								children: updating ? "更新中…" : "一键更新"
+							}),
+							updateMsg !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								style: { ...CSS.hint },
+								children: updateMsg
+							})
 						]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -2725,7 +2814,10 @@ window.__ModuleLoader__.load({
 					updateMcpServer: (name, patch) => controller.updateMcpServer(name, patch),
 					toggleMcpServer: (name, enabled) => controller.toggleMcpServer(name, enabled),
 					removeMcpServer: (name) => controller.removeMcpServer(name),
-					testMcpServer: (name) => controller.testMcpServer(name)
+					testMcpServer: (name) => controller.testMcpServer(name),
+					refreshSessions: () => {
+						sessions.refresh?.().catch(() => {});
+					}
 				})
 			}, SwitchbladeSection));
 		}

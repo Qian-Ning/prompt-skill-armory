@@ -6,6 +6,14 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.8.3] - 2026-08
+
+### 新增 · Added
+- **一键更新**：面板自动检测 npm 最新版本，发现新版本时顶部横幅提示并可一键更新（Host 端运行官方安装器原地重装）。
+  **One-click update**: the panel auto-checks the npm registry; when a newer version exists it shows a banner with a one-click update (the Host re-runs the official installer in place).
+- 删除/导入对话后同步刷新 DSH 官方会话列表。
+  The official DSH conversation list now refreshes after delete/import.
+
 ## [0.8.2] - 2026-08
 
 ### 新增 · Added
