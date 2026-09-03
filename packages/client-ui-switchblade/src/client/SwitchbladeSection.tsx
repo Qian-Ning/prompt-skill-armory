@@ -331,7 +331,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
 type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'chat' | 'stats'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.9.3'
+const ARMORY_VERSION = '0.9.4'
 
 /** Compact duration: 45.2s / 2m42s / 1h05m. */
 function fmtDuration(ms: number): string {

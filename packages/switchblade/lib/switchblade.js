@@ -409,6 +409,12 @@ async function listConversations() {
 function validName(name) {
 	return /^[a-zA-Z0-9._-]+$/.test(name);
 }
+/** Local-timezone `YYYY-MM-DD` for a millisecond instant (avoids UTC shift). */
+function localDate(ms) {
+	const d = new Date(ms);
+	const p = (n) => String(n).padStart(2, "0");
+	return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 /** Simple default pricing (USD per 1M tokens); mirrors common API pricing. */
 const PRICING = {
 	inputPerM: .3,
@@ -471,7 +477,8 @@ async function collectStats(range = "all") {
 			const sv = v.rows?.sessionStats?.val;
 			if (sv === void 0 || (sv.steps ?? 0) === 0) continue;
 			const created = v.identity?.createdAt ?? 0;
-			if (created < cutoff) continue;
+			const active = typeof v.rows?.sessionListMetadata?.val?.lastPromptAt === "number" && v.rows.sessionListMetadata.val.lastPromptAt > 0 ? v.rows.sessionListMetadata.val.lastPromptAt : created;
+			if (active < cutoff) continue;
 			const t = v.rows?.tokenUsage?.val?.totals ?? zeroTokens();
 			const turns = sv.turns ?? 0;
 			const steps = sv.steps ?? 0;
@@ -494,7 +501,7 @@ async function collectStats(range = "all") {
 			totals.ttftSteps += ttftSteps;
 			totals.decodeMs += decodeMs;
 			totals.costUsd += cost;
-			const date = created > 0 ? new Date(created).toISOString().slice(0, 10) : "未知";
+			const date = active > 0 ? localDate(active) : "未知";
 			const d = byDay.get(date) ?? {
 				date,
 				sessions: 0,
@@ -517,7 +524,7 @@ async function collectStats(range = "all") {
 			d.cacheReadTokens += t.cacheReadTokens;
 			d.cacheWriteTokens += t.cacheWriteTokens;
 			byDay.set(date, d);
-			const hour = created > 0 ? new Date(created).getHours() : 0;
+			const hour = active > 0 ? new Date(active).getHours() : 0;
 			const hb = byHour.get(hour) ?? {
 				hour,
 				steps: 0,
@@ -576,7 +583,7 @@ async function collectStats(range = "all") {
 			mo.cacheWriteTokens += t.cacheWriteTokens;
 			byModel.set(model, mo);
 			recent.push({
-				time: created,
+				time: active,
 				provider: project,
 				model,
 				inputTokens: t.uncachedInputTokens,

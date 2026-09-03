@@ -257,10 +257,18 @@ export interface UsageStats {
 interface ProjCacheRow {
   identity?: { createdAt?: number; cwd?: string }
   rows?: {
-    sessionStats?: { val?: { turns?: number; steps?: number; llmMs?: number; toolMs?: number; ttftMs?: number; ttftSteps?: number; decodeMs?: number; decodeTokens?: number } }
+    sessionStats?: { val?: { turns?: number; steps?: number; llmMs?: number; toolMs?: number; ttftMs?: number; ttftSteps?: number; decodeMs?: number; decodeTokens?: number; openStep?: unknown } }
     tokenUsage?: { val?: { totals?: TokenUsage } }
     title?: { val?: string | null }
+    sessionListMetadata?: { val?: { blank?: boolean; lastPromptAt?: number } }
   }
+}
+
+/** Local-timezone `YYYY-MM-DD` for a millisecond instant (avoids UTC shift). */
+function localDate(ms: number): string {
+  const d = new Date(ms)
+  const p = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
 /** Simple default pricing (USD per 1M tokens); mirrors common API pricing. */
@@ -312,7 +320,13 @@ async function collectStats(range = 'all'): Promise<UsageStats> {
       const sv = v.rows?.sessionStats?.val
       if (sv === undefined || (sv.steps ?? 0) === 0) continue
       const created = v.identity?.createdAt ?? 0
-      if (created < cutoff) continue
+      // A session's *activity* time — the last prompt (falls back to creation).
+      // Filtering/bucketing by createdAt alone drops sessions that were created
+      // earlier but used today, leaving the "today" chart blank.
+      const active = typeof v.rows?.sessionListMetadata?.val?.lastPromptAt === 'number' && v.rows.sessionListMetadata.val.lastPromptAt > 0
+        ? v.rows.sessionListMetadata.val.lastPromptAt
+        : created
+      if (active < cutoff) continue
       const t = v.rows?.tokenUsage?.val?.totals ?? zeroTokens()
       const turns = sv.turns ?? 0
       const steps = sv.steps ?? 0
@@ -329,14 +343,14 @@ async function collectStats(range = 'all'): Promise<UsageStats> {
       totals.ttftMs += ttftMs; totals.ttftSteps += ttftSteps; totals.decodeMs += decodeMs
       totals.costUsd += cost
 
-      const date = created > 0 ? new Date(created).toISOString().slice(0, 10) : '未知'
+      const date = active > 0 ? localDate(active) : '未知'
       const d = byDay.get(date) ?? { date, sessions: 0, turns: 0, steps: 0, llmMs: 0, toolMs: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
       d.sessions++; d.turns += turns; d.steps += steps; d.llmMs += llmMs; d.toolMs += toolMs
       d.inputTokens += t.uncachedInputTokens; d.outputTokens += t.outputTokens; d.cacheReadTokens += t.cacheReadTokens; d.cacheWriteTokens += t.cacheWriteTokens
       byDay.set(date, d)
 
       // Hour bucket (local time) — used for the "today" 24h view.
-      const hour = created > 0 ? new Date(created).getHours() : 0
+      const hour = active > 0 ? new Date(active).getHours() : 0
       const hb = byHour.get(hour) ?? { hour, steps: 0, outputTokens: 0, inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
       hb.steps += steps; hb.outputTokens += t.outputTokens; hb.inputTokens += t.uncachedInputTokens
       hb.cacheReadTokens += t.cacheReadTokens; hb.cacheWriteTokens += t.cacheWriteTokens
@@ -355,7 +369,7 @@ async function collectStats(range = 'all'): Promise<UsageStats> {
       byModel.set(model, mo)
 
       recent.push({
-        time: created, provider: project, model,
+        time: active, provider: project, model,
         inputTokens: t.uncachedInputTokens, outputTokens: t.outputTokens,
         cacheReadTokens: t.cacheReadTokens, cacheWriteTokens: t.cacheWriteTokens,
         cacheHitRate: hitRateOf(t), costUsd: cost,

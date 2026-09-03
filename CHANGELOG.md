@@ -6,6 +6,12 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.9.4] - 2026-08
+
+### 修复 · Fixed
+- 「今天」统计改用会话的**最后活动时间**（`lastPromptAt`，回退到创建时间）做过滤与按小时分桶：此前按创建时间过滤会把「前几天创建、今天仍在使用」的会话整个跳过，导致今天折线图空白。同时按日统计改为本地时区日期（不再用 UTC `toISOString` 产生跨日错位）。
+  The "today" stats now use each session's **last activity time** (`lastPromptAt`, falling back to creation time) for filtering and hourly bucketing: previously sessions created earlier but still used today were skipped entirely, leaving the today chart blank. Daily bucketing also switched to local-timezone dates (no more UTC shift).
+
 ## [0.9.3] - 2026-08
 
 ### 新增 · Added
