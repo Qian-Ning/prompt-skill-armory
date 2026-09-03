@@ -6,6 +6,12 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.9.1] - 2026-08
+
+### 修复 · Fixed
+- 一键更新失败：npm 包 bin 名实际为 `armory`，旧命令 `npx prompt-skill-armory` 找不到同名命令。新增 `prompt-skill-armory` bin 别名，Host 更新改用 `npm exec --package=prompt-skill-armory -- armory`（shell 模式 + 更长超时），并把具体错误信息回显到面板。
+  Fixed one-click update: the npm bin is `armory`, so `npx prompt-skill-armory` failed. Added a `prompt-skill-armory` bin alias, switched the Host update to `npm exec --package=prompt-skill-armory -- armory` (shell mode + longer timeout), and surface the real error in the panel.
+
 ## [0.9.0] - 2026-08
 
 ### 变更 · Changed

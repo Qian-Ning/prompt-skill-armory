@@ -331,7 +331,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
 type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'chat' | 'stats'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.9.0'
+const ARMORY_VERSION = '0.9.1'
 
 /** Compact duration: 45.2s / 2m42s / 1h05m. */
 function fmtDuration(ms: number): string {
@@ -592,8 +592,8 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
 
   const doUpdate = async (): Promise<void> => {
     setUpdating(true); setUpdateMsg('')
-    const ok = await runUpdate()
-    setUpdateMsg(ok ? '更新完成，请重启客户端生效' : '更新失败')
+    const r = await runUpdate()
+    setUpdateMsg(r.ok ? '更新完成，请重启客户端生效' : (r.error !== undefined && r.error !== '' ? `更新失败：${r.error.slice(0, 300)}` : '更新失败'))
     setUpdating(false)
   }
 

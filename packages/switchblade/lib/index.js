@@ -1075,12 +1075,26 @@ function makeConversationRoutes() {
 					return;
 				}
 				try {
-					await exec("npx.cmd", ["--yes", "prompt-skill-armory"], { timeout: 12e4 });
-					json(res, 200, { ok: true });
+					const { stdout, stderr } = await exec("npm.cmd", [
+						"exec",
+						"--yes",
+						"--package=prompt-skill-armory",
+						"--",
+						"armory"
+					], {
+						timeout: 3e5,
+						windowsHide: true,
+						maxBuffer: 16 * 1024 * 1024,
+						shell: true
+					});
+					json(res, 200, {
+						ok: true,
+						log: (stdout || "").slice(-4e3) + (stderr || "").slice(-2e3)
+					});
 				} catch (e) {
 					json(res, 400, {
 						ok: false,
-						error: e instanceof Error ? e.message : String(e)
+						error: e instanceof Error ? `${e.message}\n${e.stderr ?? ""}`.slice(0, 3e3) : String(e)
 					});
 				}
 			}

@@ -572,9 +572,16 @@ window.__ModuleLoader__.load({
 		/** Trigger an in-place update (runs the installer, which reinstalls the plugin). */
 		async function runUpdate() {
 			try {
-				return (await (await fetch("/api/armory/update", { method: "POST" })).json()).ok === true;
+				const b = await (await fetch("/api/armory/update", { method: "POST" })).json();
+				return {
+					ok: b.ok === true,
+					error: b.error
+				};
 			} catch {
-				return false;
+				return {
+					ok: false,
+					error: String("网络请求失败")
+				};
 			}
 		}
 		/** Compare dotted versions; true when `a` is older than `b`. */
@@ -939,7 +946,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.9.0";
+		const ARMORY_VERSION = "0.9.1";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;
@@ -1320,8 +1327,8 @@ window.__ModuleLoader__.load({
 			const doUpdate = async () => {
 				setUpdating(true);
 				setUpdateMsg("");
-				const ok = await runUpdate();
-				setUpdateMsg(ok ? "更新完成，请重启客户端生效" : "更新失败");
+				const r = await runUpdate();
+				setUpdateMsg(r.ok ? "更新完成，请重启客户端生效" : r.error !== void 0 && r.error !== "" ? `更新失败：${r.error.slice(0, 300)}` : "更新失败");
 				setUpdating(false);
 			};
 			const onChatFile = async (file) => {

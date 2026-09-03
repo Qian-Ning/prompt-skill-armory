@@ -12,13 +12,13 @@
 |--|--|--|--|
 | <img src="docs/preview/preview-6.png" width="220"/> | <img src="docs/preview/preview-7.png" width="220"/> | | |
 
-![version](https://img.shields.io/badge/version-0.9.0-00ff9c)
+![version](https://img.shields.io/badge/version-0.9.1-00ff9c)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![platform](https://img.shields.io/badge/platform-web%20%2B%20desktop-00ff9c)
 ![CI](https://github.com/Qian-Ning/prompt-skill-armory/actions/workflows/ci.yml/badge.svg)
 
 ```
-✦ Armory  v0.9.0
+✦ Armory  v0.9.1
 ┌─────────┬─────────┬─────┬────────────┬──────┬──────┐
 │ Prompts │ Skills  │ MCP │  Wallpaper │ Chat │ Stats│
 │ global  │ merged  │ hub │  wallpaper │ sync │ usage│
@@ -111,7 +111,7 @@ Achieved via profile composition (the installer mounts the panel into each profi
 
 Every time the panel opens it queries npm for the latest `prompt-skill-armory` version; when a newer version exists a banner appears:
 
-> New version vX.Y.Z (current v0.9.0) [Update now]
+> New version vX.Y.Z (current v0.9.1) [Update now]
 
 Clicking "Update now" makes the Host re-run the official installer in place → "Update complete, please restart the client".
 

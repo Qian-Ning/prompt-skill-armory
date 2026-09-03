@@ -59,12 +59,12 @@ export async function checkLatestVersion(): Promise<string> {
 }
 
 /** Trigger an in-place update (runs the installer, which reinstalls the plugin). */
-export async function runUpdate(): Promise<boolean> {
+export async function runUpdate(): Promise<{ ok: boolean; error?: string }> {
   try {
     const r = await fetch('/api/armory/update', { method: 'POST' })
-    const b = (await r.json()) as { ok: boolean }
-    return b.ok === true
-  } catch { return false }
+    const b = (await r.json()) as { ok: boolean; error?: string }
+    return { ok: b.ok === true, error: b.error }
+  } catch { return { ok: false, error: String('网络请求失败') } }
 }
 
 /** Compare dotted versions; true when `a` is older than `b`. */

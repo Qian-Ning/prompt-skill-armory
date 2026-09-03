@@ -540,9 +540,16 @@ export function makeConversationRoutes(): WebRoute[] {
         if (!sameOrigin(req)) { json(res, 403, { ok: false, error: 'rejected' }); return }
         if (req.method !== 'POST') { json(res, 405, { ok: false }); return }
         try {
-          await exec('npx.cmd', ['--yes', 'prompt-skill-armory'], { timeout: 120000 })
-          json(res, 200, { ok: true })
-        } catch (e) { json(res, 400, { ok: false, error: e instanceof Error ? e.message : String(e) }) }
+          // Run the installer's own bin. Use the explicit `armory` bin so it
+          // works even before a `prompt-skill-armory` bin alias ships; capture
+          // output so failures surface a readable reason instead of a bare
+          // "更新失败".
+          const { stdout, stderr } = await exec('npm.cmd', ['exec', '--yes', '--package=prompt-skill-armory', '--', 'armory'], { timeout: 300000, windowsHide: true, maxBuffer: 16 * 1024 * 1024, shell: true })
+          json(res, 200, { ok: true, log: (stdout || '').slice(-4000) + (stderr || '').slice(-2000) })
+        } catch (e) {
+          const detail = e instanceof Error ? `${e.message}\n${(e as { stderr?: string }).stderr ?? ''}`.slice(0, 3000) : String(e)
+          json(res, 400, { ok: false, error: detail })
+        }
       },
     },
     {
