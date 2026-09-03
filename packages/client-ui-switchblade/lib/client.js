@@ -947,7 +947,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.9.5";
+		const ARMORY_VERSION = "0.9.6";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;
@@ -991,13 +991,25 @@ window.__ModuleLoader__.load({
 				children: "暂无趋势数据"
 			});
 			const maxSteps = Math.max(...byDay.map((d) => d.steps), 1);
-			const maxTokens = Math.max(...byDay.map((d) => d.outputTokens), 1);
+			const maxTokens = Math.max(...byDay.map((d) => d.outputTokens), ...byDay.map((d) => d.inputTokens), ...byDay.map((d) => d.cacheReadTokens), ...byDay.map((d) => d.cacheWriteTokens), 1);
 			const x = (i) => PAD.l + (n === 1 ? iw / 2 : i / (n - 1) * iw);
 			const ySteps = (v) => PAD.t + ih - v / maxSteps * ih;
 			const yTok = (v) => PAD.t + ih - v / maxTokens * ih;
 			const pathSteps = byDay.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${ySteps(d.steps).toFixed(1)}`).join(" ");
 			const pathOut = byDay.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${yTok(d.outputTokens).toFixed(1)}`).join(" ");
 			const pathIn = byDay.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${yTok(d.inputTokens).toFixed(1)}`).join(" ");
+			const tokTicks = [
+				0,
+				.25,
+				.5,
+				.75,
+				1
+			].map((f) => f * maxTokens);
+			const niceToken = (v) => {
+				if (v >= 1e6) return `${(v / 1e6).toFixed(v % 1e6 === 0 ? 0 : 1)}M`;
+				if (v >= 1e3) return `${(v / 1e3).toFixed(v % 1e3 === 0 ? 0 : 1)}k`;
+				return String(Math.round(v));
+			};
 			const grid = [
 				0,
 				1,
@@ -1039,12 +1051,15 @@ window.__ModuleLoader__.load({
 								fill: "#8b949e",
 								children: g.label
 							})] }, i)),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
-								x: W - PAD.r + 6,
-								y: PAD.t + 8,
-								fontSize: "9",
-								fill: "#3fb950",
-								children: fmtTokens(maxTokens)
+							tokTicks.map((v, i) => {
+								const yy = PAD.t + ih - v / maxTokens * ih;
+								return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
+									x: W - PAD.r + 6,
+									y: yy + 3,
+									fontSize: "9",
+									fill: i === 4 ? "#3fb950" : "#8b949e",
+									children: i === 0 ? "0" : niceToken(v)
+								}, i);
 							}),
 							byDay.map((d, i) => {
 								if (n > 7 && i % Math.ceil(n / 7) !== 0 && i !== n - 1) return null;
@@ -1111,21 +1126,40 @@ window.__ModuleLoader__.load({
 									stroke: "#0d1117",
 									strokeWidth: "1"
 								}),
-								n <= 4 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
-									x: x(i),
-									y: ySteps(d.steps) - 6,
-									textAnchor: "middle",
-									fontSize: "8.5",
-									fill: "#d29922",
-									children: d.steps
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
-									x: x(i),
-									y: yTok(d.outputTokens) - 6,
-									textAnchor: "middle",
-									fontSize: "8.5",
-									fill: "#3fb950",
-									children: fmtTokens(d.outputTokens)
-								})] })
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+									cx: x(i),
+									cy: yTok(d.inputTokens),
+									r: hover === i ? 4 : 3,
+									fill: "#58a6ff",
+									stroke: "#0d1117",
+									strokeWidth: "1"
+								}),
+								n <= 4 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
+										x: x(i),
+										y: ySteps(d.steps) - 6,
+										textAnchor: "middle",
+										fontSize: "8.5",
+										fill: "#d29922",
+										children: d.steps
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
+										x: x(i),
+										y: yTok(d.outputTokens) - 6,
+										textAnchor: "middle",
+										fontSize: "8.5",
+										fill: "#3fb950",
+										children: fmtTokens(d.outputTokens)
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
+										x: x(i),
+										y: yTok(d.inputTokens) - 6,
+										textAnchor: "middle",
+										fontSize: "8.5",
+										fill: "#58a6ff",
+										children: fmtTokens(d.inputTokens)
+									})
+								] })
 							] }, i))
 						]
 					}),

@@ -331,7 +331,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
 type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'chat' | 'stats'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.9.5'
+const ARMORY_VERSION = '0.9.6'
 
 /** Compact duration: 45.2s / 2m42s / 1h05m. */
 function fmtDuration(ms: number): string {
@@ -376,7 +376,16 @@ function TrendChart({ byDay }: { byDay: TrendPoint[] }): JSX.Element {
   if (n === 0) return <div style={CSS.empty}>暂无趋势数据</div>
 
   const maxSteps = Math.max(...byDay.map((d) => d.steps), 1)
-  const maxTokens = Math.max(...byDay.map((d) => d.outputTokens), 1)
+  // All token series share the right axis — input tokens are typically an
+  // order of magnitude larger than output, so maxing on output alone pushed
+  // the input line above the viewport (negative y) and made it invisible.
+  const maxTokens = Math.max(
+    ...byDay.map((d) => d.outputTokens),
+    ...byDay.map((d) => d.inputTokens),
+    ...byDay.map((d) => d.cacheReadTokens),
+    ...byDay.map((d) => d.cacheWriteTokens),
+    1,
+  )
   const x = (i: number): number => PAD.l + (n === 1 ? iw / 2 : (i / (n - 1)) * iw)
   const ySteps = (v: number): number => PAD.t + ih - (v / maxSteps) * ih
   const yTok = (v: number): number => PAD.t + ih - (v / maxTokens) * ih
@@ -384,6 +393,14 @@ function TrendChart({ byDay }: { byDay: TrendPoint[] }): JSX.Element {
   const pathSteps = byDay.map((d, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${ySteps(d.steps).toFixed(1)}`).join(' ')
   const pathOut = byDay.map((d, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${yTok(d.outputTokens).toFixed(1)}`).join(' ')
   const pathIn = byDay.map((d, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${yTok(d.inputTokens).toFixed(1)}`).join(' ')
+
+  // Right-axis tick labels: round nice token counts (1 / 2 / 5 stepping).
+  const tokTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * maxTokens)
+  const niceToken = (v: number): string => {
+    if (v >= 1e6) return `${(v / 1e6).toFixed(v % 1e6 === 0 ? 0 : 1)}M`
+    if (v >= 1e3) return `${(v / 1e3).toFixed(v % 1e3 === 0 ? 0 : 1)}k`
+    return String(Math.round(v))
+  }
 
   // gridlines (4)
   const grid = [0, 1, 2, 3, 4].map((g) => {
@@ -404,8 +421,15 @@ function TrendChart({ byDay }: { byDay: TrendPoint[] }): JSX.Element {
             <text x={PAD.l - 5} y={g.yy + 3} textAnchor="end" fontSize="9" fill="#8b949e">{g.label}</text>
           </g>
         ))}
-        {/* right tokens max label */}
-        <text x={W - PAD.r + 6} y={PAD.t + 8} fontSize="9" fill="#3fb950">{fmtTokens(maxTokens)}</text>
+        {/* right tokens axis: 5 rounded ticks + max label */}
+        {tokTicks.map((v, i) => {
+          const yy = PAD.t + ih - (v / maxTokens) * ih
+          return (
+            <text key={i} x={W - PAD.r + 6} y={yy + 3} fontSize="9" fill={i === 4 ? '#3fb950' : '#8b949e'}>
+              {i === 0 ? '0' : niceToken(v)}
+            </text>
+          )
+        })}
         {/* x labels (max 7) */}
         {byDay.map((d, i) => {
           if (n > 7 && i % Math.ceil(n / 7) !== 0 && i !== n - 1) return null
@@ -425,10 +449,12 @@ function TrendChart({ byDay }: { byDay: TrendPoint[] }): JSX.Element {
             <rect x={x(i) - 10} y={PAD.t} width={20} height={ih} fill="transparent" onMouseEnter={() => setHover(i)} />
             <circle cx={x(i)} cy={ySteps(d.steps)} r={hover === i ? 4 : 3} fill="#d29922" stroke="#0d1117" strokeWidth="1" />
             <circle cx={x(i)} cy={yTok(d.outputTokens)} r={hover === i ? 4 : 3} fill="#3fb950" stroke="#0d1117" strokeWidth="1" />
+            <circle cx={x(i)} cy={yTok(d.inputTokens)} r={hover === i ? 4 : 3} fill="#58a6ff" stroke="#0d1117" strokeWidth="1" />
             {n <= 4 && (
               <>
                 <text x={x(i)} y={ySteps(d.steps) - 6} textAnchor="middle" fontSize="8.5" fill="#d29922">{d.steps}</text>
                 <text x={x(i)} y={yTok(d.outputTokens) - 6} textAnchor="middle" fontSize="8.5" fill="#3fb950">{fmtTokens(d.outputTokens)}</text>
+                <text x={x(i)} y={yTok(d.inputTokens) - 6} textAnchor="middle" fontSize="8.5" fill="#58a6ff">{fmtTokens(d.inputTokens)}</text>
               </>
             )}
           </g>

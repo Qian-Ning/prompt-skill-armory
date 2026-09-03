@@ -6,6 +6,12 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.9.6] - 2026-08
+
+### 修复 · Fixed
+- 折线图输入 Token 线不可见：右轴此前只用输出 Token 缩放，输入 Token 通常大一个数量级，Y 坐标算出负值被画出视口顶部。现在输入/输出/缓存读/缓存写全部参与右轴缩放，并补上输入 Token 的数据点、数值标签与圆整刻度。
+  The input-token line was invisible: the right axis was scaled on output tokens alone, and input tokens (typically an order of magnitude larger) produced negative Y coordinates above the viewport. All token series now share the axis scale, and input-token dots, value labels and rounded ticks are rendered.
+
 ## [0.9.5] - 2026-08
 
 ### 新增 · Added
