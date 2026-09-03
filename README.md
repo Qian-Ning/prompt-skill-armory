@@ -6,10 +6,11 @@
 
 **中文** · [**English**](./README.en.md)
 
-![Prompt•Skill-Armory 管理面板](docs/preview/preview-1.png)
+![Armory 管理面板](docs/preview/preview-1.png)
 
 | <img src="docs/preview/preview-2.png" width="220"/> | <img src="docs/preview/preview-3.png" width="220"/> | <img src="docs/preview/preview-4.png" width="220"/> | <img src="docs/preview/preview-5.png" width="220"/> |
 |--|--|--|--|
+| <img src="docs/preview/preview-6.png" width="220"/> | <img src="docs/preview/preview-7.png" width="220"/> | | |
 
 ![version](https://img.shields.io/badge/version-0.9.0-00ff9c)
 ![license](https://img.shields.io/badge/license-MIT-blue)
@@ -18,10 +19,10 @@
 
 ```
 ✦ Armory  v0.9.0
-┌─────────┬─────────┬─────┬────────────┬─────────┐
-│ 提示词    │  技能    │ MCP │  Wallpaper │ 预设     │
-│ 全局注入  │ 合并管理  │ 连接 │  壁纸·特效  │ roster  │
-└─────────┴─────────┴─────┴────────────┴─────────┘
+┌─────────┬─────────┬─────┬────────────┬──────┬──────┐
+│ 提示词    │  技能    │ MCP │  Wallpaper │ 对话  │ 统计 │
+│ 全局注入  │ 合并管理  │ 连接 │  壁纸·特效  │ 导入  │ 用量 │
+└─────────┴─────────┴─────┴────────────┴──────┴──────┘
 ```
 
 ---
@@ -31,7 +32,8 @@
 - [🚀 快速开始](#-快速开始)
 - [✨ 功能](#-功能)
 - [🖥️ 平台支持](#️-平台支持)
-- [🧰 在聊天中使用技能](#-在聊天中使用技能)
+- [🔄 一键更新](#-一键更新)
+- [🗑️ 卸载](#️-卸载)
 - [🏗️ 架构](#️-架构)
 - [📦 包含的包](#-包含的包)
 - [🗂️ 仓库结构](#️-仓库结构)
@@ -40,6 +42,7 @@
 - [📚 文档](#-文档)
 - [🤝 贡献 / 官方合入](#-贡献--官方合入)
 - [📄 许可](#-许可)
+- [🔗 友情链接 · Friends](#-友情链接--friends)
 
 ---
 
@@ -76,7 +79,7 @@ pnpm dsh web
 
 （或直接重启 DSH Desktop 客户端。）
 
-打开 **设置 → Prompt•Skill-Armory**（书图标）。
+打开 **设置 → Armory**（书图标）。
 
 > **要求**：已安装 DeepSeek Harness 运行时（`dsh web` 或桌面客户端）。插件是 DSH 的插件，不打包运行时本身。
 
@@ -90,10 +93,11 @@ pnpm dsh web
   - 手动填写
   - `.md` 文件选择
   - 会话内命令：`/armory-skill-dir <dir>`、`/armory-install-zip <zip>`
-- **Agent 预设** — 浏览名册、设默认。
 - **MCP 工具服务器** — 添加/编辑/移除 stdio 或 HTTP 的 MCP 服务器，启用即自动连接，每台展示运行状态与工具列表，支持「测试」连接。
 - **Wallpaper（全局壁纸与特效）** — 本地上传图片/视频（字节存盘，settings 只存 id 不膨胀）或填图片 URL；透明度/遮罩/玻璃/模糊/铺法实时可调；**web 与桌面客户端分别设置**。
 - **输入栏提示行样式** — 为 composer 下方提示与统计行单独设启用/颜色/字号/渐变色。
+- **对话导入 / 导出** — 勾选多个会话导出为 zip（含附件与工作区），另一台机器导入即可还原；列表显示对话标题、项目与时间；支持**真实删除**（删目录 + 清索引）。
+- **使用统计（cc-switch 风格）** — 时间范围筛选（全部/30天/7天/今天）；输入/输出/缓存读/缓存写 Token、缓存命中率、成本估算；请求日志（时间/项目/输入输出/缓存/成本/用时/首字/状态）；Provider（项目）统计与模型统计；SVG 双轴趋势图（今天按 24 小时分段）。
 - **中英双语 UI**（简体中文 / English）。
 - **设置侧边栏书图标**。
 
@@ -105,6 +109,22 @@ pnpm dsh web
 | DSH Desktop 客户端 | ✅ | ✅ |
 
 通过 profile 组合实现（安装器把面板挂进每个 profile 的 `cordis.patch.yml`）——无需 fork 客户端。
+
+## 🔄 一键更新
+
+插件面板每次打开会自动查询 npm 上 `prompt-skill-armory` 的最新版本；发现新版本时顶部显示横幅：
+
+> 有新版本 vX.Y.Z（当前 v0.9.0） [一键更新]
+
+点击「一键更新」→ Host 端运行官方安装器原地重装 → 提示「更新完成，请重启客户端生效」。
+
+## 🗑️ 卸载
+
+```bash
+npx prompt-skill-armory uninstall
+```
+
+移除两个插件包、Host bundle、面板挂载，并清理壁纸/导出目录（提示词/技能配置保留在 settings.yaml，可手动删 `switchblade` 命名空间彻底清除）。
 
 ## 🧰 在聊天中使用技能
 
@@ -127,35 +147,33 @@ pnpm dsh web
 │  │  Web 面板    │◄──────────────────►│  Host 服务    │  │
 │  │ ui-switchblade│   api.skills.*    │ switchblade │  │
 │  │  (settings)  │   api.settings.*  │  (bundle)   │  │
+│  │             │   /api/armory/*    │  + routes   │  │
 │  └─────────────┘                    └──────┬──────┘  │
 │                                            │         │
 │                              ctx.systemPrompt.section│
 │                              ctx.skills.register     │
-│                                            │         │
-│                              ┌─────────────┴──────┐  │
-│                              │ 每个 agent 系统提示词 │  │
-│                              │ 技能注册表 / 预设     │  │
-│                              └────────────────────┘  │
+│                              /api/armory/* (对话/统计 │
+│                              壁纸上传/更新/卸载)       │
 └──────────────────────────────────────────────────────┘
 ```
 
-- **Host 服务**（`switchblade` bundle）持有提示词/技能/预设的 CRUD 与持久化，通过 `ctx.systemPrompt.section` 全局注入、`ctx.skills.register` 注册技能。
-- **Web 面板**（`ui-switchblade`）通过 connection RPC 调用 Host（`api.skills.list`、`api.agentPresets.list`、`api.settings.mutate/describe`），不直接碰 DSH 内部。
+- **Host 服务**（`switchblade` bundle）持有提示词/技能/预设的 CRUD 与持久化，通过 `ctx.systemPrompt.section` 全局注入、`ctx.skills.register` 注册技能；并注册 `/api/armory/*` 路由（对话导入导出、会话删除、使用统计、壁纸上传、版本检查、一键更新）。
+- **Web 面板**（`ui-switchblade`）通过 connection RPC 调用 Host（`api.skills.list`、`api.settings.mutate/describe`）与 `/api/armory/*` 路由，不直接碰 DSH 内部。
 - **安装器**把两者通过 profile 组合装进 DSH——web 和 desktop 共用同一套机制。
 
 ## 📦 包含的包
 
 | 包 | 作用 |
 |---|---|
-| `prompt-skill-armory` | npm 安装器（CLI） |
-| `@deepseek-ai/dsh-switchblade` | Host 服务（提示词/技能/命令/MCP/壁纸持久化 + 上传路由） |
-| `@deepseek-ai/dsh-client-ui-switchblade` | Web 面板（五 tab：提示词/技能/MCP/Wallpaper/预设） |
+| `prompt-skill-armory` | npm 安装器（CLI，含卸载） |
+| `@deepseek-ai/dsh-switchblade` | Host 服务（提示词/技能/命令/MCP/壁纸/对话/统计 + 路由） |
+| `@deepseek-ai/dsh-client-ui-switchblade` | Web 面板（六 tab：提示词/技能/MCP/Wallpaper/对话/统计） |
 
 ## 🗂️ 仓库结构
 
 ```
 prompt-skill-armory/
-├── cli.cjs                  # 一键安装 CLI
+├── cli.cjs                  # 一键安装/卸载 CLI
 ├── package.json             # npm 安装器包
 ├── packages/                # 构建好的插件（lib+src+manifest）
 │   ├── switchblade/         # @deepseek-ai/dsh-switchblade (Host)
@@ -163,6 +181,7 @@ prompt-skill-armory/
 ├── plugin-src/              # 插件源码镜像
 ├── scripts/build-shipped.mjs # 从 DSH checkout 同步构建产物
 ├── demo/demo.html           # UI 预览（mock 数据）
+├── docs/preview/            # 面板真实截图
 ├── README.md                # 本文（中文）· README.en.md 英文版
 ├── UPSTREAM.md              # 官方合入指南
 ├── CHANGELOG.md             # 版本历史
@@ -193,6 +212,12 @@ node scripts/build-shipped.mjs <path-to-deepseek-harness>
 **Q: 为什么我的客户端侧边栏图标是齿轮而不是书？**
 A: 桌面客户端打包版的 `SettingsRoot` 硬编码了图标映射。通过 npm 安装器的 profile 组合，面板能正常工作，但书图标需要官方合入（见 [`UPSTREAM.md`](./UPSTREAM.md)）。
 
+**Q: 会话导入后另一台机器看不到？**
+A: 导入成功后需要**重启 DSH 客户端**让其重新扫描会话列表；若目标项目路径不同，在导入前填写「目标项目 key」（形如 `--C-Users-xxx--`）以归入正确项目。
+
+**Q: 统计里的成本准确吗？**
+A: 成本是**估算**（内置单价 × token：输入 $0.3/M、输出 $1.2/M、缓存读 $0.03/M、缓存写 $0.6/M），不是真实账单。
+
 **Q: 会不会影响我已有的配置/会话？**
 A: 不会。插件只新增 `switchblade` settings 命名空间，不动其他配置。安装器还会体检 settings，防止膨胀。
 
@@ -200,7 +225,7 @@ A: 不会。插件只新增 `switchblade` settings 命名空间，不动其他�
 A: 可以。把 npm 包拷到目标机器，`npm install <tarball>` 即可；或用 `file:` 安装本地构建产物（见 [`TESTING.md`](./TESTING.md)）。
 
 **Q: 技能从哪里来？**
-A: 三种：手动填写、`.md` 文件选择、会话内 `/armory-skill-dir`（目录）或 `/armory-install-zip`（zip）。安装后统一进"技能"tab 管理。
+A: 三种：手动填写、`.md` 文件选择、会话内 `/armory-skill-dir`（目录）或 `/armory-install-zip`（zip）。安装后统一进「技能」tab 管理。
 
 ## 📚 文档
 

@@ -1,6 +1,6 @@
 # Upstream Integration Guide
 
-> This document lists every change to ship **Prompt•Skill-Armory** natively in the DeepSeek Harness ecosystem, so the panel appears in both `dsh web` and the DSH Desktop client — including the book icon in the settings sidebar.
+> This document lists every change to ship **Armory** natively in the DeepSeek Harness ecosystem, so the panel appears in both `dsh web` and the DSH Desktop client — including the book icon in the settings sidebar.
 
 [**中文**](./UPSTREAM.md) · **English**
 
@@ -16,7 +16,7 @@ Two upstream repos:
 
 New package `@deepseek-ai/dsh-switchblade`:
 - `src/index.ts` — function plugin (exports `name`/`inject`/`apply`)
-- `src/switchblade.ts` — `Switchblade extends Service` (`static inject = ['loader','skills','systemPrompt']`): prompt CRUD (globally injected via `ctx.systemPrompt.section`), skill install/manage, preset handling
+- `src/switchblade.ts` — `Switchblade extends Service` (`static inject = ['loader','skills','systemPrompt']`): prompt CRUD (globally injected via `ctx.systemPrompt.section`), skill install/manage, MCP server bridging, conversation import/export, usage stats, wallpaper upload, and update routes
 - `src/commands.ts` — `/armory` command family (incl. `/sw-*` aliases)
 - `src/invariant.ts` / `src/types.ts` / `src/patch.ts`
 - `cordis.patch.yml` — bundle manifest (`dsh.bundle.patch`)
@@ -25,7 +25,7 @@ New package `@deepseek-ai/dsh-switchblade`:
 ### A2. Add the Web panel `packages/client/ui-switchblade`
 
 New package `@deepseek-ai/dsh-client-ui-switchblade`:
-- `src/client/SwitchbladeSection.tsx` — settings panel (3 tabs: Prompts/Skills/Agent Presets)
+- `src/client/SwitchbladeSection.tsx` — settings panel (6 tabs: Prompts/Skills/MCP/Wallpaper/Chat/Stats)
 - `src/client/store.ts` — connection-RPC data layer
 - `src/client/locales.ts` — zh/en
 - `src/client/index.ts` — registers `settings.section` + `LocaleNamespaceMap`

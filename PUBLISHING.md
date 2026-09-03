@@ -1,6 +1,6 @@
 # 发布指南
 
-> 本文档说明如何发布与分发 **Prompt•Skill-Armory**（0.5.5）。
+> 本文档说明如何发布与分发 **Armory**（0.9.0）。
 
 **中文** · [**English**](./PUBLISHING.en.md)
 

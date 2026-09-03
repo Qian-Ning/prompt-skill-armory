@@ -1,6 +1,6 @@
 # 更新日志
 
-> **Prompt•Skill-Armory**（`@deepseek-ai/dsh-switchblade` + `@deepseek-ai/dsh-client-ui-switchblade`）的所有重要变更。
+> **Armory**（`@deepseek-ai/dsh-switchblade` + `@deepseek-ai/dsh-client-ui-switchblade`）的所有重要变更。
 
 **中文** · [**English**](./CHANGELOG.en.md)
 

@@ -1,6 +1,6 @@
 # Publishing Guide
 
-> This guide covers publishing and distributing **Prompt•Skill-Armory** (0.5.5).
+> This guide covers publishing and distributing **Armory** (0.9.0).
 
 [**中文**](./PUBLISHING.md) · **English**
 

@@ -1,6 +1,6 @@
 # Changelog
 
-> All notable changes to **Prompt•Skill-Armory** (`@deepseek-ai/dsh-switchblade` + `@deepseek-ai/dsh-client-ui-switchblade`).
+> All notable changes to **Armory** (`@deepseek-ai/dsh-switchblade` + `@deepseek-ai/dsh-client-ui-switchblade`).
 
 [**中文**](./CHANGELOG.md) · **English**
 

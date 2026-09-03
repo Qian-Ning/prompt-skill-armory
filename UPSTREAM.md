@@ -1,6 +1,6 @@
 # 官方合入指南
 
-> 本文档列出把 **Prompt•Skill-Armory** 原生内置进 DeepSeek Harness 生态所需的全部改动，让面板在 `dsh web` 和 DSH Desktop 客户端都原生显示——包括侧边栏书图标。
+> 本文档列出把 **Armory** 原生内置进 DeepSeek Harness 生态所需的全部改动，让面板在 `dsh web` 和 DSH Desktop 客户端都原生显示——包括侧边栏书图标。
 
 **中文** · [**English**](./UPSTREAM.en.md)
 
@@ -16,7 +16,7 @@
 
 新包 `@deepseek-ai/dsh-switchblade`:
 - `src/index.ts` — 函数插件（导出 `name`/`inject`/`apply`）
-- `src/switchblade.ts` — `Switchblade extends Service`（`static inject = ['loader','skills','systemPrompt']`）: 提示词 CRUD（经 `ctx.systemPrompt.section` 全局注入）、技能安装/管理、预设处理
+- `src/switchblade.ts` — `Switchblade extends Service`（`static inject = ['loader','skills','systemPrompt']`）: 提示词 CRUD（经 `ctx.systemPrompt.section` 全局注入）、技能安装/管理、MCP 服务器连接、对话导入导出、使用统计、壁纸上传与一键更新路由
 - `src/commands.ts` — `/armory` 命令族（含 `/sw-*` 别名）
 - `src/invariant.ts` / `src/types.ts` / `src/patch.ts`
 - `cordis.patch.yml` — bundle 清单（`dsh.bundle.patch`）
@@ -25,7 +25,7 @@
 ### A2. 添加 Web 面板 `packages/client/ui-switchblade`
 
 新包 `@deepseek-ai/dsh-client-ui-switchblade`:
-- `src/client/SwitchbladeSection.tsx` — 设置面板（3 tab: 提示词/技能/Agent预设）
+- `src/client/SwitchbladeSection.tsx` — 设置面板（6 tab: 提示词/技能/MCP/Wallpaper/对话/统计）
 - `src/client/store.ts` — connection-RPC 数据层
 - `src/client/locales.ts` — 中/英
 - `src/client/index.ts` — 注册 `settings.section` + `LocaleNamespaceMap`
