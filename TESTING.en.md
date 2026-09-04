@@ -9,7 +9,7 @@
 ## Step 0 — prerequisites
 
 - Node 22.19+ and pnpm 11 (the repo pins `pnpm@11.7.0`).
-- The full `deepseek-harness` checkout with the switchblade package inside it: `packages/switchblade/switchblade`.
+- The full `deepseek-harness` checkout with the switchblade package inside it (the runtime we adapt to lives at <https://github.com/deepseek-ai/deepseek-harness>; the desktop client at <https://github.com/anywhere-labs/dsh-desktop>): `packages/switchblade/switchblade`.
 
 ```bash
 cd deepseek-harness

@@ -4,9 +4,9 @@
 
 **中文** · [**English**](./UPSTREAM.en.md)
 
-涉及两个上游仓库：
-1. `deepseek-ai/deepseek-harness` — 主仓库（web + 核心）
-2. `anywhere-labs/dsh-desktop` — 桌面客户端
+涉及两个上游仓库（即 Armory 适配的出处，请以官方构建为准）：
+1. [`deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness) — 主仓库（web + 核心）
+2. [`anywhere-labs/dsh-desktop`](https://github.com/anywhere-labs/dsh-desktop) — 桌面客户端
 
 ---
 

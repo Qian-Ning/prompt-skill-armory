@@ -30,6 +30,7 @@
 ## 📑 Table of contents
 
 - [🚀 Quick start](#-quick-start)
+- [🎯 Supported upstreams](#-supported-upstreams)
 - [✨ Features](#-features)
 - [🖥️ Platform support](#️-platform-support)
 - [🔄 One-click update](#-one-click-update)
@@ -43,6 +44,19 @@
 - [🤝 Contributing / Upstream](#-contributing--upstream)
 - [📄 License](#-license)
 - [🔗 Friends](#-friends)
+
+---
+
+## 🎯 Supported upstreams
+
+Armory is a **DeepSeek Harness plugin**, built and tested against exactly these two official repositories:
+
+| Upstream | Environment | Repo |
+|---|---|---|
+| **DeepSeek Harness** | `dsh web` web runtime | <https://github.com/deepseek-ai/deepseek-harness> |
+| **DSH Desktop** | desktop client | <https://github.com/anywhere-labs/dsh-desktop> |
+
+> ⚠️ **Use builds from the official repositories above (or compatible derivatives).** Other forks / modified builds may change internal interfaces, which can prevent the panel from mounting, settings from applying, missing commands, or even put the client into recovery mode — that is not a bug in this plugin. Before installing or reporting issues, confirm your runtime comes from these two sources.
 
 ---
 
@@ -102,8 +116,8 @@ Open **Settings → Armory** (book icon).
 
 | Environment | Panel | `/armory` commands |
 |---|---|---|
-| `dsh web` (official) | ✅ | ✅ |
-| DSH Desktop client | ✅ | ✅ |
+| `dsh web` ([deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)) | ✅ | ✅ |
+| DSH Desktop client ([anywhere-labs/dsh-desktop](https://github.com/anywhere-labs/dsh-desktop)) | ✅ | ✅ |
 
 Achieved via profile composition (the installer mounts the panel into each profile's `cordis.patch.yml`) — no client fork needed.
 

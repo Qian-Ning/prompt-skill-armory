@@ -30,6 +30,7 @@
 ## 📑 目录
 
 - [🚀 快速开始](#-快速开始)
+- [🎯 适配目标 · Supported upstreams](#-适配目标--supported-upstreams)
 - [✨ 功能](#-功能)
 - [🖥️ 平台支持](#️-平台支持)
 - [🔄 一键更新](#-一键更新)
@@ -43,6 +44,19 @@
 - [🤝 贡献 / 官方合入](#-贡献--官方合入)
 - [📄 许可](#-许可)
 - [🔗 友情链接 · Friends](#-友情链接--friends)
+
+---
+
+## 🎯 适配目标 · Supported upstreams
+
+Armory 是 **DeepSeek Harness 的插件**，专为以下两个官方仓库构建与测试：
+
+| 上游 | 对应环境 | 仓库 |
+|---|---|---|
+| **DeepSeek Harness** | `dsh web` 网页端运行时 | <https://github.com/deepseek-ai/deepseek-harness> |
+| **DSH Desktop** | 桌面客户端 | <https://github.com/anywhere-labs/dsh-desktop> |
+
+> ⚠️ **请使用上述官方仓库的构建（或其保持兼容的派生版）。** 其他 fork / 魔改版本的内部接口可能不同，导致面板无法挂载、设置不生效、命令缺失，甚至让客户端进入恢复模式——那不是本插件的 bug。安装或反馈前请先确认你的运行时来自以上两个出处。
 
 ---
 
@@ -105,8 +119,8 @@ pnpm dsh web
 
 | 环境 | 面板 | `/armory` 命令 |
 |---|---|---|
-| `dsh web`（官方） | ✅ | ✅ |
-| DSH Desktop 客户端 | ✅ | ✅ |
+| `dsh web`（[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)） | ✅ | ✅ |
+| DSH Desktop 客户端（[anywhere-labs/dsh-desktop](https://github.com/anywhere-labs/dsh-desktop)） | ✅ | ✅ |
 
 通过 profile 组合实现（安装器把面板挂进每个 profile 的 `cordis.patch.yml`）——无需 fork 客户端。
 

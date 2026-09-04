@@ -9,7 +9,7 @@
 ## 第 0 步 · 前置条件
 
 - Node 22.19+ 与 pnpm 11（仓库固定 `pnpm@11.7.0`）。
-- 包含 switchblade 包的完整 `deepseek-harness` checkout：`packages/switchblade/switchblade`。
+- 包含 switchblade 包的完整 `deepseek-harness` checkout（我们适配的运行时来自 <https://github.com/deepseek-ai/deepseek-harness>；桌面客户端为 <https://github.com/anywhere-labs/dsh-desktop>）：`packages/switchblade/switchblade`。
 
 ```bash
 cd deepseek-harness

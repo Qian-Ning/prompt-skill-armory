@@ -4,9 +4,9 @@
 
 [**中文**](./UPSTREAM.md) · **English**
 
-Two upstream repos:
-1. `deepseek-ai/deepseek-harness` — the main repo (web + core)
-2. `anywhere-labs/dsh-desktop` — the desktop client
+Two upstream repos (the sources Armory adapts to — please use official builds):
+1. [`deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness) — the main repo (web + core)
+2. [`anywhere-labs/dsh-desktop`](https://github.com/anywhere-labs/dsh-desktop) — the desktop client
 
 ---
 
