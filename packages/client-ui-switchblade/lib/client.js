@@ -6,7 +6,6 @@ window.__ModuleLoader__.load({
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 		let react = require("react");
 		let react_jsx_runtime = require("react/jsx-runtime");
-		let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-runtime/client");
 		//#region src/client/locales.ts
 		/**
 		* Switchblade management page dictionaries.
@@ -958,7 +957,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.9.9";
+		const ARMORY_VERSION = "0.10.0";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;
@@ -3207,6 +3206,26 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region src/client/store.ts
+		/** Local snapshot store engine (plain observable, sync flush). */
+		function createSnapshotStore(init) {
+			let current = init;
+			const listeners = /* @__PURE__ */ new Set();
+			return {
+				getSnapshot: () => current,
+				subscribe(listener) {
+					listeners.add(listener);
+					return () => {
+						listeners.delete(listener);
+					};
+				},
+				set(next) {
+					current = next;
+					for (const l of [...listeners]) try {
+						l();
+					} catch {}
+				}
+			};
+		}
 		/** Initial (idle) state. */
 		const IDLE = {
 			status: "idle",
@@ -3224,7 +3243,7 @@ window.__ModuleLoader__.load({
 			api;
 			sessionId;
 			/** Snapshot store backing the section's view state. */
-			store = (0, _deepseek_ai_dsh_client_runtime_client.createSnapshotStore)(IDLE);
+			store = createSnapshotStore(IDLE);
 			constructor(api, sessionId) {
 				this.api = api;
 				this.sessionId = sessionId;

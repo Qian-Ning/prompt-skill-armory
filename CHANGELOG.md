@@ -6,6 +6,14 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.10.0] - 2026-09
+
+### 修复 · Fixed
+- **DSH Desktop 2.0.9 恢复模式（第二次根治）**：修复 cordis 属性访问后，客户端面板仍报 `client-modules: require("@deepseek-ai/dsh-client-runtime/client") missed the module table`——2.0.9 的浏览器模块表不再把 `dsh-client-runtime/client` 作为可用种子，而插件的 snapshot store 从它导入 `createSnapshotStore`，构建产物残留运行时 require 导致加载失败。改为**内联本地 snapshot store** 并移除对 runtime 的运行时依赖（`ClientContext`/会话列表改用本地接口），2.0.9 下实测完整启动。
+  **DSH Desktop 2.0.9 recovery mode (second root cause)**: after the cordis fix, the panel still failed with `client-modules: require("@deepseek-ai/dsh-client-runtime/client") missed the module table` — 2.0.9's browser module table no longer seeds `dsh-client-runtime/client`, but the plugin imported `createSnapshotStore` from it, leaving a runtime require in the bundle. Now inlines a local snapshot store and drops the runtime dependency (local `ClientContext`/session interfaces); verified a full boot on 2.0.9.
+- **提示词作用域（精细化差分）**：每个提示词可选 全局 / 指定项目（cwd 目录名）/ 指定会话（session id），Host 按 agent 的 cwd/sessionId 匹配注入，零全局污染。
+  **Prompt scoping**: each prompt can target global / a project / a session with zero leakage.
+
 ## [0.9.9] - 2026-09
 
 ### 修复 · Fixed

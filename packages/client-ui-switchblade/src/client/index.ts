@@ -6,7 +6,6 @@
  */
 
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
-import type { ClientContext, ISessions } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the settings shell's SlotMap merge (the 'settings.section' entry).
@@ -31,6 +30,33 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
+/** Minimal browser-plugin context (avoids a runtime require of
+ * `dsh-client-runtime/client`, which the 2.0.9 module table does not seed). */
+interface ClientContext {
+  effect(callback: () => void, label?: string): () => void
+  get(name: string): unknown
+  slots: {
+    inject(slot: string, register: () => unknown): void
+    register(entry: {
+      name: string
+      id: string
+      order: number
+      label: () => string
+      locale: string
+      inject: () => SwitchbladeSectionInjected
+    }): unknown
+  }
+  locale: {
+    register(ns: string, dict: unknown): unknown
+    bind(ns: string): (key: SwitchbladeKey) => string
+  }
+}
+
+/** The session-list surface we read the current session from. */
+interface SessionsLike {
+  list: { getSnapshot(): { current?: string | undefined } }
+}
+
 /** Required services (cordis fiber inject). */
 export const inject = ['slots', 'locale', 'connection', 'sessions']
 
@@ -42,7 +68,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-switchblade: dictionaries')
 
   const api = (ctx.get('connection') as ConnectionHandle).api
-  const sessions = ctx.get('sessions') as ISessions
+  const sessions = ctx.get('sessions') as SessionsLike
 
   // Global background/effects survives restart: the Host persists the section
   // in its settings document and serves it over a same-origin route; we fetch

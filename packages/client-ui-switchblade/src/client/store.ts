@@ -6,7 +6,32 @@
  */
 
 import type { ConnectionHandle, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+
+/** Minimal snapshot-store contract (no runtime dependency: the 2.0.9 client
+ * module table seeds `dsh-client-store`, not `dsh-client-runtime/client`, so
+ * a require of the latter fails at load). */
+export interface SnapshotStore<T> {
+  readonly getSnapshot: () => T
+  subscribe(listener: () => void): () => void
+  set(next: T): void
+}
+
+/** Local snapshot store engine (plain observable, sync flush). */
+function createSnapshotStore<T>(init: T): SnapshotStore<T> {
+  let current = init
+  const listeners = new Set<() => void>()
+  return {
+    getSnapshot: () => current,
+    subscribe(listener: () => void): () => void {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+    set(next: T): void {
+      current = next
+      for (const l of [...listeners]) { try { l() } catch { /* ignore */ } }
+    },
+  }
+}
 
 /** A skill row as reported by skill.list. */
 export interface SkillRow {
