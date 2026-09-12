@@ -68,8 +68,13 @@ export interface PromptRow {
   readonly order: number
   readonly enabled: boolean
   readonly isDefault: boolean
-  /** Fine-grained application scope (global by default). */
-  readonly scope?: { readonly type: 'global' } | { readonly type: 'project'; readonly key: string } | { readonly type: 'session'; readonly id: string }
+  /** Fine-grained application scope (global by default). Includes target one
+   * project/session; excludes cover everything except that one. */
+  readonly scope?: { readonly type: 'global' }
+    | { readonly type: 'project'; readonly key: string }
+    | { readonly type: 'session'; readonly id: string }
+    | { readonly type: 'exclude-project'; readonly key: string }
+    | { readonly type: 'exclude-session'; readonly id: string }
 }
 
 /** An installed skill row. */

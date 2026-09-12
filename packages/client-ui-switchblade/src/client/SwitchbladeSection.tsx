@@ -331,7 +331,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
 type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'chat' | 'stats'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.10.5'
+const ARMORY_VERSION = '0.11.0'
 
 /** Compact duration: 45.2s / 2m42s / 1h05m. */
 function fmtDuration(ms: number): string {
@@ -500,7 +500,7 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
   const [promptName, setPromptName] = useState('')
   const [promptDesc, setPromptDesc] = useState('')
   const [promptContent, setPromptContent] = useState('')
-  const [promptScopeType, setPromptScopeType] = useState<'global' | 'project' | 'session'>('global')
+  const [promptScopeType, setPromptScopeType] = useState<'global' | 'project' | 'session' | 'exclude-project' | 'exclude-session'>('global')
   const [promptScopeKey, setPromptScopeKey] = useState('')
   const [skillName, setSkillName] = useState('')
   const [skillDesc, setSkillDesc] = useState('')
@@ -648,6 +648,27 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     else if (chatProject !== '' && !chatProjects.some((p) => p.key === chatProject)) setChatProject(chatProjects[0]?.key ?? '')
   }, [chatProjects, chatProject])
 
+  // Scope pickers for prompts: project choices (cwd basename) and session
+  // choices (title + truncated id) derived from the loaded conversation rows,
+  // so users pick from real data instead of typing keys by hand.
+  const scopeProjectOptions = useMemo(
+    () => chatProjects.map((p) => ({ value: p.name, label: p.name })),
+    [chatProjects],
+  )
+  const scopeSessionOptions = useMemo(() => {
+    const seen = new Set<string>()
+    const out: { value: string; label: string }[] = []
+    for (const row of chatRows) {
+      if (seen.has(row.sessionId)) continue
+      seen.add(row.sessionId)
+      const title = (row.title || '').trim()
+      const short = row.sessionId.replace(/^session-/, '').slice(0, 8)
+      const proj = row.cwd ? row.cwd.split(/[\\/]/).filter(Boolean).pop() ?? '' : row.projectKey
+      out.push({ value: row.sessionId, label: `${title !== '' ? title : '（无标题）'} · ${proj} · ${short}` })
+    }
+    return out
+  }, [chatRows])
+
   const doExportChat = async (): Promise<void> => {
     setChatBusy(true); setChatMsg('')
     try {
@@ -753,12 +774,15 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
 
   const submitPrompt = (): void => {
     if (promptName.trim() === '' || promptContent.trim() === '') return
+    if (promptScopeType !== 'global' && promptScopeKey.trim() === '') return
     setBusy(true)
+    const key = promptScopeKey.trim()
     const scope = promptScopeType === 'global'
       ? undefined
-      : promptScopeType === 'project'
-        ? { type: 'project' as const, key: promptScopeKey.trim() }
-        : { type: 'session' as const, id: promptScopeKey.trim() }
+      : promptScopeType === 'project' ? { type: 'project' as const, key }
+        : promptScopeType === 'session' ? { type: 'session' as const, id: key }
+          : promptScopeType === 'exclude-project' ? { type: 'exclude-project' as const, key }
+            : { type: 'exclude-session' as const, id: key }
     const action = editingPromptId !== undefined
       ? updatePrompt(editingPromptId, { name: promptName, description: promptDesc, content: promptContent, scope })
       : addPrompt({ name: promptName, description: promptDesc, content: promptContent, scope })
@@ -778,9 +802,9 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
     setPromptDesc(row.desc)
     setPromptContent(row.content ?? '')
     const s = row.scope
-    if (s !== undefined && (s.type === 'project' || s.type === 'session')) {
-      setPromptScopeType(s.type)
-      setPromptScopeKey(s.type === 'project' ? (s.key ?? '') : (s.id ?? ''))
+    if (s !== undefined && s.type !== 'global') {
+      setPromptScopeType(s.type as typeof promptScopeType)
+      setPromptScopeKey(s.type === 'project' || s.type === 'exclude-project' ? (s.key ?? '') : (s.id ?? ''))
     } else {
       setPromptScopeType('global'); setPromptScopeKey('')
     }
@@ -925,18 +949,35 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
               <textarea style={CSS.textarea} placeholder={t('promptContentPlaceholder')} value={promptContent} onChange={(e) => setPromptContent(e.target.value)} />
               <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' as const }}>
                 <span style={{ ...CSS.hint, width: '76px', flex: 'none' }}>作用域</span>
-                {(['global', 'project', 'session'] as const).map((st) => (
-                  <button key={st} style={{ ...CSS.actionBtn, ...(promptScopeType === st ? CSS.tabActive : {}) }}
-                    onClick={() => setPromptScopeType(st)}>
-                    {st === 'global' ? '全局' : st === 'project' ? '指定项目' : '指定会话'}
-                  </button>
-                ))}
-                {promptScopeType !== 'global' && (
-                  <input style={{ ...CSS.input, maxWidth: '240px', flex: 1, minWidth: '120px' }}
-                    placeholder={promptScopeType === 'project' ? '项目目录名（如 qc）' : '会话 id（session-…）'}
-                    value={promptScopeKey}
-                    onChange={(e) => setPromptScopeKey(e.target.value)} />
-                )}
+                <select
+                  style={{ ...CSS.input, flex: 'none', minWidth: '150px' }}
+                  value={promptScopeType}
+                  onChange={(e) => { setPromptScopeType(e.target.value as typeof promptScopeType); setPromptScopeKey('') }}
+                >
+                  <option value="global">全局（所有项目/会话）</option>
+                  <option value="project">仅指定项目</option>
+                  <option value="session">仅指定会话</option>
+                  <option value="exclude-project">除指定项目外（其余全部生效）</option>
+                  <option value="exclude-session">除指定会话外（其余全部生效）</option>
+                </select>
+                {promptScopeType !== 'global' && (() => {
+                  const isProject = promptScopeType === 'project' || promptScopeType === 'exclude-project'
+                  const opts = isProject
+                    ? scopeProjectOptions
+                    : scopeSessionOptions
+                  return (
+                    <select
+                      style={{ ...CSS.input, flex: 1, minWidth: '180px', maxWidth: '320px' }}
+                      value={promptScopeKey}
+                      onChange={(e) => setPromptScopeKey(e.target.value)}
+                    >
+                      <option value="">{opts.length === 0 ? '（暂无数据，请先到「对话」标签刷新）' : '请选择…'}</option>
+                      {opts.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  )
+                })()}
               </div>
               <div style={CSS.actions}>
                 <button style={CSS.actionBtn} disabled={busy} onClick={submitPrompt}>
@@ -960,7 +1001,16 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
                       </span>
                       {row.scope !== undefined && row.scope.type !== 'global' && (
                         <span style={{ ...CSS.badge, ...CSS.badgeInstalled }}>
-                          {row.scope.type === 'project' ? `项目：${row.scope.key}` : `会话：${row.scope.id.slice(0, 12)}…`}
+                          {(() => {
+                            const s = row.scope as { type: string; key?: string; id?: string }
+                            switch (s.type) {
+                              case 'project': return `仅项目：${s.key}`
+                              case 'session': return `仅会话：${(s.id ?? '').replace(/^session-/, '').slice(0, 8)}`
+                              case 'exclude-project': return `除项目 ${s.key} 外`
+                              case 'exclude-session': return `除会话 ${(s.id ?? '').replace(/^session-/, '').slice(0, 8)} 外`
+                              default: return ''
+                            }
+                          })()}
                         </span>
                       )}
                     </div>

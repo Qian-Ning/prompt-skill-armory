@@ -949,7 +949,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.10.5";
+		const ARMORY_VERSION = "0.11.0";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;
@@ -1387,6 +1387,26 @@ window.__ModuleLoader__.load({
 				if (chatProject === "" && chatProjects.length > 0) setChatProject(chatProjects[0].key);
 				else if (chatProject !== "" && !chatProjects.some((p) => p.key === chatProject)) setChatProject(chatProjects[0]?.key ?? "");
 			}, [chatProjects, chatProject]);
+			const scopeProjectOptions = (0, react.useMemo)(() => chatProjects.map((p) => ({
+				value: p.name,
+				label: p.name
+			})), [chatProjects]);
+			const scopeSessionOptions = (0, react.useMemo)(() => {
+				const seen = /* @__PURE__ */ new Set();
+				const out = [];
+				for (const row of chatRows) {
+					if (seen.has(row.sessionId)) continue;
+					seen.add(row.sessionId);
+					const title = (row.title || "").trim();
+					const short = row.sessionId.replace(/^session-/, "").slice(0, 8);
+					const proj = row.cwd ? row.cwd.split(/[\\/]/).filter(Boolean).pop() ?? "" : row.projectKey;
+					out.push({
+						value: row.sessionId,
+						label: `${title !== "" ? title : "（无标题）"} · ${proj} · ${short}`
+					});
+				}
+				return out;
+			}, [chatRows]);
 			const doExportChat = async () => {
 				setChatBusy(true);
 				setChatMsg("");
@@ -1546,13 +1566,21 @@ window.__ModuleLoader__.load({
 			};
 			const submitPrompt = () => {
 				if (promptName.trim() === "" || promptContent.trim() === "") return;
+				if (promptScopeType !== "global" && promptScopeKey.trim() === "") return;
 				setBusy(true);
+				const key = promptScopeKey.trim();
 				const scope = promptScopeType === "global" ? void 0 : promptScopeType === "project" ? {
 					type: "project",
-					key: promptScopeKey.trim()
-				} : {
+					key
+				} : promptScopeType === "session" ? {
 					type: "session",
-					id: promptScopeKey.trim()
+					id: key
+				} : promptScopeType === "exclude-project" ? {
+					type: "exclude-project",
+					key
+				} : {
+					type: "exclude-session",
+					id: key
 				};
 				(editingPromptId !== void 0 ? updatePrompt(editingPromptId, {
 					name: promptName,
@@ -1580,9 +1608,9 @@ window.__ModuleLoader__.load({
 				setPromptDesc(row.desc);
 				setPromptContent(row.content ?? "");
 				const s = row.scope;
-				if (s !== void 0 && (s.type === "project" || s.type === "session")) {
+				if (s !== void 0 && s.type !== "global") {
 					setPromptScopeType(s.type);
-					setPromptScopeKey(s.type === "project" ? s.key ?? "" : s.id ?? "");
+					setPromptScopeKey(s.type === "project" || s.type === "exclude-project" ? s.key ?? "" : s.id ?? "");
 				} else {
 					setPromptScopeType("global");
 					setPromptScopeKey("");
@@ -1856,29 +1884,60 @@ window.__ModuleLoader__.load({
 													},
 													children: "作用域"
 												}),
-												[
-													"global",
-													"project",
-													"session"
-												].map((st) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-													style: {
-														...CSS.actionBtn,
-														...promptScopeType === st ? CSS.tabActive : {}
-													},
-													onClick: () => setPromptScopeType(st),
-													children: st === "global" ? "全局" : st === "project" ? "指定项目" : "指定会话"
-												}, st)),
-												promptScopeType !== "global" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+												/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
 													style: {
 														...CSS.input,
-														maxWidth: "240px",
-														flex: 1,
-														minWidth: "120px"
+														flex: "none",
+														minWidth: "150px"
 													},
-													placeholder: promptScopeType === "project" ? "项目目录名（如 qc）" : "会话 id（session-…）",
-													value: promptScopeKey,
-													onChange: (e) => setPromptScopeKey(e.target.value)
-												})
+													value: promptScopeType,
+													onChange: (e) => {
+														setPromptScopeType(e.target.value);
+														setPromptScopeKey("");
+													},
+													children: [
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+															value: "global",
+															children: "全局（所有项目/会话）"
+														}),
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+															value: "project",
+															children: "仅指定项目"
+														}),
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+															value: "session",
+															children: "仅指定会话"
+														}),
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+															value: "exclude-project",
+															children: "除指定项目外（其余全部生效）"
+														}),
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+															value: "exclude-session",
+															children: "除指定会话外（其余全部生效）"
+														})
+													]
+												}),
+												promptScopeType !== "global" && (() => {
+													const opts = promptScopeType === "project" || promptScopeType === "exclude-project" ? scopeProjectOptions : scopeSessionOptions;
+													return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+														style: {
+															...CSS.input,
+															flex: 1,
+															minWidth: "180px",
+															maxWidth: "320px"
+														},
+														value: promptScopeKey,
+														onChange: (e) => setPromptScopeKey(e.target.value),
+														children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+															value: "",
+															children: opts.length === 0 ? "（暂无数据，请先到「对话」标签刷新）" : "请选择…"
+														}), opts.map((o) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+															value: o.value,
+															children: o.label
+														}, o.value))]
+													});
+												})()
 											]
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -1936,7 +1995,16 @@ window.__ModuleLoader__.load({
 															...CSS.badge,
 															...CSS.badgeInstalled
 														},
-														children: row.scope.type === "project" ? `项目：${row.scope.key}` : `会话：${row.scope.id.slice(0, 12)}…`
+														children: (() => {
+															const s = row.scope;
+															switch (s.type) {
+																case "project": return `仅项目：${s.key}`;
+																case "session": return `仅会话：${(s.id ?? "").replace(/^session-/, "").slice(0, 8)}`;
+																case "exclude-project": return `除项目 ${s.key} 外`;
+																case "exclude-session": return `除会话 ${(s.id ?? "").replace(/^session-/, "").slice(0, 8)} 外`;
+																default: return "";
+															}
+														})()
 													})
 												]
 											}),

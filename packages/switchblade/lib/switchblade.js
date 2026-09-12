@@ -1529,19 +1529,23 @@ var Switchblade = class extends Service {
 	}
 	/**
 	* Whether a prompt's scope covers the agent assembling the system prompt.
-	* Global covers everything; project matches the session cwd basename;
-	* session matches the exact session id. Missing agent context (diagnostics,
-	* assembly outside a session) only matches global prompts.
+	* Global covers everything; project/session match the named one;
+	* exclude-project/exclude-session cover EVERYTHING EXCEPT the named one.
+	* Missing agent context (diagnostics, assembly outside a session) follows
+	* the include rules (excludes still apply, includes do not).
 	*/
 	promptScopeMatches(prompt, context) {
 		const scope = prompt.scope;
 		if (scope === void 0 || scope.type === "global") return true;
-		if (scope.type === "project") {
-			const cwd = context?.agent?.session?.header?.cwd;
-			if (cwd === void 0 || cwd === "") return false;
-			return (cwd.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? "") === scope.key;
+		const cwd = context?.agent?.session?.header?.cwd;
+		const base = cwd === void 0 || cwd === "" ? "" : cwd.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? "";
+		const sid = context?.agent?.session?.id;
+		switch (scope.type) {
+			case "project": return base !== "" && base === scope.key;
+			case "session": return sid !== void 0 && sid === scope.id;
+			case "exclude-project": return !(base !== "" && base === scope.key);
+			case "exclude-session": return sid === void 0 || sid !== scope.id;
 		}
-		return context?.agent?.session?.id === scope.id;
 	}
 	/**
 	* Reconcile live systemPrompt registrations against the persisted prompt

@@ -6,6 +6,16 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.11.0] - 2026-09
+
+### 变更 · Changed
+- **提示词作用域更易用（下拉选择 + 排除模式）**：
+  - 作用域改为 5 选项下拉：全局 / 仅指定项目 / 仅指定会话 / **除指定项目外** / **除指定会话外**。
+  - 目标不再手填：项目从真实工作区（cwd 目录名）下拉，会话从真实会话列表下拉（显示「标题 · 项目 · 短 id」），无需记 session id。
+  - 新增**排除模式**——覆盖「全局生效、只有某个项目/会话不要」这一最常见诉求，一个开关搞定，不必逐个勾选。
+  - 列表徽章同步显示：`仅项目：qc` / `除会话 abc12345 外`。
+  **Prompt scoping is now easier (dropdowns + exclude modes)**: a 5-option scope dropdown (global / only-project / only-session / all-except-project / all-except-session); project and session targets are picked from real data (workspace cwd names, session titles) instead of typing ids; exclude modes cover the common "global but not here" case in one step; list badges reflect it.
+
 ## [0.10.5] - 2026-09
 
 ### 修复 · Fixed

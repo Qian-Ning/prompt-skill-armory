@@ -151,11 +151,15 @@ function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
 
 /** One prompt's application scope: global (every agent), a single project
  * workspace (matched by cwd basename), or a single session (by session id).
- * Omitted = global — the historical behavior. */
+ * Exclude modes invert the match: apply to EVERYTHING except the named
+ * project/session — the common "mostly global, one place doesn't want it"
+ * case. Omitted = global — the historical behavior. */
 export type PromptScope =
   | { readonly type: 'global' }
   | { readonly type: 'project'; readonly key: string }
   | { readonly type: 'session'; readonly id: string }
+  | { readonly type: 'exclude-project'; readonly key: string }
+  | { readonly type: 'exclude-session'; readonly id: string }
 
 /** One user-authored prompt (CCswitch-style), persisted and injected globally. */
 export interface ManagedPrompt {
@@ -402,21 +406,27 @@ export class Switchblade extends Service {
 
   /**
    * Whether a prompt's scope covers the agent assembling the system prompt.
-   * Global covers everything; project matches the session cwd basename;
-   * session matches the exact session id. Missing agent context (diagnostics,
-   * assembly outside a session) only matches global prompts.
+   * Global covers everything; project/session match the named one;
+   * exclude-project/exclude-session cover EVERYTHING EXCEPT the named one.
+   * Missing agent context (diagnostics, assembly outside a session) follows
+   * the include rules (excludes still apply, includes do not).
    */
   private promptScopeMatches(prompt: ManagedPrompt, context: { agent?: { session?: { header?: { cwd?: string }; id?: string } } } | undefined): boolean {
     const scope = prompt.scope
     if (scope === undefined || scope.type === 'global') return true
-    if (scope.type === 'project') {
-      const cwd = context?.agent?.session?.header?.cwd
-      if (cwd === undefined || cwd === '') return false
-      const base = cwd.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? ''
-      return base === scope.key
+    const cwd = context?.agent?.session?.header?.cwd
+    const base = cwd === undefined || cwd === '' ? '' : cwd.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? ''
+    const sid = context?.agent?.session?.id
+    switch (scope.type) {
+      case 'project':
+        return base !== '' && base === scope.key
+      case 'session':
+        return sid !== undefined && sid === scope.id
+      case 'exclude-project':
+        return !(base !== '' && base === scope.key)
+      case 'exclude-session':
+        return sid === undefined || sid !== scope.id
     }
-    // session scope
-    return context?.agent?.session?.id === scope.id
   }
 
   /**
