@@ -6,6 +6,14 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.10.1] - 2026-09
+
+### 修复 · Fixed
+- **面板加载报错 `Cannot read properties of undefined (reading 'settings')`**：DSH 2.0.9 把 client 端 settings 访问从 `connection.api.settings` 改成 `ctx.settingsScope`（命名空间绑定）+ `ctx.remote`（RPC）——插件还走旧的 `api.settings`，api 为 undefined 直接抛错，导致提示词/技能/MCP/壁纸面板全部加载失败。已迁移：读走 `settingsScope.getSnapshot()`，写走 `scope.mutate(ops)`，技能走 `remote.skills.list({request})`。面板恢复后，之前安装的提示词/技能/MCP 数据依然在（settings.yaml 从未丢失）。
+  **Panel load error `Cannot read properties of undefined (reading 'settings')`**: DSH 2.0.9 moved client settings access from `connection.api.settings` to `ctx.settingsScope` (namespace-bound) + `ctx.remote` (RPC); the plugin still used the old `api.settings`, so api was undefined and the whole panel failed. Migrated: reads via `settingsScope.getSnapshot()`, writes via `scope.mutate(ops)`, skills via `remote.skills.list({request})`. Installed prompts/skills/MCP data was never lost (still in settings.yaml).
+- **壁纸只覆盖对话区**：DSH 2.0.9 桌面端是 `.dshDesktopFrame` 三栏 grid（sidebar/conversation/rightbar），背景层挂在 body 下 z-index 为负被 surface 实色背景挡住，且 `data-dsh-desktop-material="off"` 的侧边栏用 `--dsw-alias-bg-layer-1` 实色。现在背景层 z-index 提到 0、`#root` 抬到 z-index 1、所有桌面 surface 背景强制透明（含 `--dsw-alias-bg-layer-1`），壁纸覆盖整个窗口。
+  **Wallpaper only covered the chat area**: 2.0.9 desktop renders a `.dshDesktopFrame` three-column grid; the negative-z body backdrop was hidden behind opaque surface fills (sidebar uses `--dsw-alias-bg-layer-1` at material=off). Backdrop is now z-index 0 with `#root` lifted above it and every desktop surface forced transparent, so the wallpaper covers the whole window.
+
 ## [0.10.0] - 2026-09
 
 ### 修复 · Fixed

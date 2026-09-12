@@ -68,14 +68,26 @@ const GLASS_ATTR = 'data-ar-glass'
 const CSS_TAG = 'prompt-skill-armory/background'
 
 const BACKGROUND_CSS = `
-  .ar-bg-layer { position: fixed; inset: 0; z-index: -2; overflow: hidden; pointer-events: none; }
+  /* Backdrop pinned to the viewport at the very bottom of the stacking order.
+     z-index 0 + forcing DSH surfaces transparent lets it show through every
+     chrome (sidebar / conversation / rightbar), not just the chat area. */
+  .ar-bg-layer { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
   .ar-bg-layer .ar-bg-image { width: 100%; height: 100%; display: block; border: 0;
     object-fit: var(--ar-bg-fit, cover); opacity: var(--ar-bg-opacity, 1);
     filter: blur(var(--ar-bg-blur, 0px)); transform: scale(var(--ar-bg-scale, 1)); transform-origin: center; }
-  .ar-bg-scrim { position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  .ar-bg-scrim { position: fixed; inset: 0; z-index: 0; pointer-events: none;
     background: rgba(255,255,255, var(--ar-bg-scrim, 0.25)); }
   body[data-ds-dark-theme] .ar-bg-scrim { background: rgba(0,0,0, var(--ar-bg-scrim, 0.25)); }
-  body[${ACTIVE_ATTR}] { --dsw-alias-bg-base: transparent; --dsw-specific-sidebar-fill: transparent; }
+
+  /* Lift the app chrome above the backdrop so it stays interactive, while
+     every DSH surface background becomes transparent to reveal the wallpaper. */
+  body[${ACTIVE_ATTR}] #root { position: relative; z-index: 1; background: transparent; }
+  body[${ACTIVE_ATTR}] .dshDesktopFrame,
+  body[${ACTIVE_ATTR}] .dshDesktopConversationSurface,
+  body[${ACTIVE_ATTR}] .dshDesktopSidebarSurface,
+  body[${ACTIVE_ATTR}] .dshDesktopRightbarSurface { background: transparent !important; }
+  body[${ACTIVE_ATTR}] { --dsw-alias-bg-base: transparent; --dsw-alias-bg-layer-1: transparent; --dsw-specific-sidebar-fill: transparent; }
+
   body[${GLASS_ATTR}] [data-composer-card],
   body[${GLASS_ATTR}] [class*="_bubble"]:not([role="tooltip"]),
   body[${GLASS_ATTR}] .md-code-block,
@@ -136,7 +148,7 @@ class BackgroundPainter {
     try {
       injectBackgroundCss()
       const hasSource = settings.url !== '' || settings.uploadId !== ''
-      for (const prop of ['--dsw-alias-bg-base', '--dsw-specific-sidebar-fill']) {
+      for (const prop of ['--dsw-alias-bg-base', '--dsw-alias-bg-layer-1', '--dsw-specific-sidebar-fill']) {
         this.rememberOnce(prop); document.body.style.setProperty(prop, 'transparent')
       }
       if (!hasSource) { this.removeLayers(); document.body.removeAttribute(ACTIVE_ATTR); this.applyGlass(settings, true); return }
@@ -221,17 +233,17 @@ const painter = new BackgroundPainter()
 // no settings-RPC allowlist dependency). Module-private state avoids any
 // self-reference / circular-eval order issue.
 // ---------------------------------------------------------------------------
-import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SettingsScopeLike } from './store.ts'
 
 const bgState: { status: 'loading' | 'ready' | 'error'; value: BackgroundSettings } = { status: 'loading', value: DEFAULT_BACKGROUND }
 const bgListeners = new Set<() => void>()
 const notifyBg = (): void => { for (const l of bgListeners) l() }
 
-let bgApi: ConnectionHandle['api'] | undefined
+let bgScope: SettingsScopeLike | undefined
 
-/** Bind the transport to a live connection API (set once at plugin apply). */
-export function initBackgroundClient(api: ConnectionHandle['api']): void {
-  bgApi = api
+/** Bind the transport to the switchblade settings scope (set once at plugin apply). */
+export function initBackgroundClient(scope: SettingsScopeLike): void {
+  bgScope = scope
 }
 
 /** Surface key: separate wallpaper per web vs desktop (they share the settings doc). */
@@ -240,9 +252,7 @@ const surfaceKey = (): string => (isDesktopSurface ? 'backgroundDesktop' : 'back
 
 /** Read the background section for the current surface from the switchblade settings. */
 function readSection(value: unknown): BackgroundSettings {
-  const sec = (value as { namespaces?: { ns?: string; value?: unknown }[] | undefined }).namespaces
-    ?.find((n) => n.ns === 'switchblade')?.value as Record<string, unknown> | undefined
-  const raw = sec?.[surfaceKey()]
+  const raw = (value as Record<string, unknown> | undefined)?.[surfaceKey()]
   return { ...DEFAULT_BACKGROUND, ...(typeof raw === 'object' && raw !== null ? (raw as BackgroundSettings) : {}) }
 }
 
@@ -251,12 +261,12 @@ export const backgroundClient = {
   subscribe(l: () => void): () => void { bgListeners.add(l); return () => { bgListeners.delete(l) } },
   /** Fetch the durable section. @returns true on success (status ready). */
   async load(): Promise<boolean> {
-    if (bgApi === undefined) { bgState.status = 'error'; return false }
+    if (bgScope === undefined) { bgState.status = 'error'; return false }
     try {
-      const res = await bgApi.settings.describe({})
-      if (!res.result.ok) throw new Error(res.result.error.message)
+      const snap = bgScope.getSnapshot()
+      if (snap.status !== 'ready' || snap.value === undefined) return false
       bgState.status = 'ready'
-      bgState.value = readSection(res.result.value)
+      bgState.value = readSection(snap.value)
       notifyBg()
       return true
     } catch {
@@ -265,10 +275,9 @@ export const backgroundClient = {
     }
   },
   async save(section: BackgroundSettings): Promise<void> {
-    if (bgApi === undefined) return
+    if (bgScope === undefined) return
     try {
-      const res = await bgApi.settings.mutate({ ns: 'switchblade', ops: [{ op: 'set', path: [surfaceKey()], value: section }] })
-      if (!res.result.ok) throw new Error(res.result.error.message)
+      await bgScope.mutate([{ op: 'set', path: [surfaceKey()], value: section }])
       bgState.status = 'ready'
       bgState.value = { ...section }
     } catch { bgState.status = 'error'; bgState.value = section }

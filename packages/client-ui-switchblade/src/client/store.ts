@@ -5,7 +5,7 @@
  * @module @deepseek-ai/dsh-client-ui-switchblade
  */
 
-import type { ConnectionHandle, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 
 /** Minimal snapshot-store contract (no runtime dependency: the 2.0.9 client
  * module table seeds `dsh-client-store`, not `dsh-client-runtime/client`, so
@@ -30,6 +30,19 @@ function createSnapshotStore<T>(init: T): SnapshotStore<T> {
       current = next
       for (const l of [...listeners]) { try { l() } catch { /* ignore */ } }
     },
+  }
+}
+
+/** 2.0.9 settings-namespace scope (from `ctx.settingsScope.bind({namespace})`). */
+export interface SettingsScopeLike {
+  getSnapshot(): { status: string; value?: unknown; revision?: unknown; writable?: boolean }
+  mutate(ops: readonly unknown[]): Promise<unknown>
+}
+
+/** 2.0.9 remote RPC surface (from `ctx.remote`). */
+export interface RemoteLike {
+  skills: {
+    list(request: { request: { sessionId: SessionId } }): Promise<{ ok: boolean; value?: { skills?: { name: string; description: string; modelInvocable: boolean }[] } }>
   }
 }
 
@@ -117,9 +130,26 @@ export class SwitchbladeSectionController {
   readonly store: SnapshotStore<SwitchbladeSectionState> = createSnapshotStore(IDLE)
 
   constructor(
-    private readonly api: ConnectionHandle['api'],
+    /** 2.0.9 settings-namespace scope bound to `switchblade` (Host watch re-injects). */
+    private readonly scope: SettingsScopeLike,
+    /** 2.0.9 remote RPC surface (skills catalog etc.). */
+    private readonly remote: RemoteLike,
     private readonly sessionId?: () => SessionId | undefined,
   ) {}
+
+  /** 2.0.9 settings read: scope mirror snapshot (never the old api.settings). */
+  private describeSettings(): Record<string, unknown> | undefined {
+    const snap = this.scope.getSnapshot()
+    if (snap.status !== 'ready' || snap.value === undefined) return undefined
+    return this.sectionFromSettings(snap.value, 'switchblade')
+  }
+
+  /** 2.0.9 settings write: scope.mutate(ops) — Host fold + re-inject. */
+  private async mutateSettings(ops: readonly unknown[]): Promise<void> {
+    const snap = this.scope.getSnapshot()
+    if (snap.status !== 'ready') throw new Error('settings scope not ready')
+    await this.scope.mutate(ops)
+  }
 
   /**
    * Load skills, prompts, and installed skills. Prompts and installed
@@ -132,25 +162,21 @@ export class SwitchbladeSectionController {
       // skill.list requires a live session; without one we skip it (never
       // hang). Settings always resolve, so the panel opens reliably.
       const sessionId = this.sessionId?.()
-      const calls: Promise<unknown>[] = [
-        this.api.settings.describe({}),
+      const calls: Promise<unknown>[] = [Promise.resolve(this.describeSettings())]
+      if (sessionId !== undefined) calls.push(this.remote.skills.list({ request: { sessionId } }))
+      const [switchbladeSection, skillRes] = await Promise.all(calls) as [
+        Record<string, unknown> | undefined,
+        { ok: boolean; error?: { message?: string }; value?: { skills?: { name: string; description: string; modelInvocable: boolean }[] } } | undefined,
       ]
-      if (sessionId !== undefined) calls.push(this.api.skills.list({ sessionId }))
-      const [settingsRes, skillRes] = await Promise.all(calls) as [
-        Awaited<ReturnType<ConnectionHandle['api']['settings']['describe']>>,
-        Awaited<ReturnType<ConnectionHandle['api']['skills']['list']>> | undefined,
-      ]
-      if (!settingsRes.result.ok) throw new Error(`settings.describe: ${settingsRes.result.error.message}`)
 
-      const skills: SkillRow[] = skillRes !== undefined && skillRes.result.ok
-        ? skillRes.result.value.skills.map((skill) => ({
+      const skills: SkillRow[] = skillRes !== undefined && skillRes.ok && skillRes.value !== undefined
+        ? skillRes.value.skills.map((skill) => ({
           name: skill.name,
           description: skill.description,
           modelInvocable: skill.modelInvocable,
         }))
         : []
 
-      const switchbladeSection = this.sectionFromSettings(settingsRes.result.value, 'switchblade')
       const prompts: PromptRow[] = Array.isArray(switchbladeSection?.prompts) ? switchbladeSection.prompts : []
       const installedSkills: InstalledSkillRow[] = Array.isArray(switchbladeSection?.installedSkills)
         ? switchbladeSection.installedSkills.map((s: { name?: string; description?: string; content?: string; enabled?: boolean }) => ({
@@ -194,9 +220,17 @@ export class SwitchbladeSectionController {
     }
   }
 
-  /** Read one namespace's user section from a settings.describe value. */
+  /** Read one namespace's section from a settings value. The 2.0.9 scope
+   * snapshot carries the bound namespace's own value; older describe payloads
+   * carry a `namespaces[]` table — accept both. */
   private sectionFromSettings(value: unknown, ns: string): Record<string, unknown> | undefined {
     if (typeof value !== 'object' || value === null) return undefined
+    // Bound-scope form: value IS the switchblade namespace section.
+    const asSection = value as Record<string, unknown>
+    if (Array.isArray(asSection.prompts) || Array.isArray(asSection.installedSkills) || asSection.mcpServers !== undefined) {
+      return asSection
+    }
+    // Full-describe form: find the row by namespace name.
     const entries = (value as { namespaces?: unknown }).namespaces
     if (!Array.isArray(entries)) return undefined
     for (const entry of entries) {
@@ -215,20 +249,16 @@ export class SwitchbladeSectionController {
 
   /** Add a prompt. */
   async addPrompt(input: { name: string; description: string; content: string; scope?: PromptRow['scope'] }): Promise<void> {
-    const res = await this.api.settings.mutate({
-      ns: 'switchblade',
-      ops: [{ op: 'set', path: ['prompts'], value: [...this.currentPrompts(), {
-        id: this.slugify(input.name),
-        name: input.name,
-        description: input.description,
-        content: input.content,
-        order: this.currentPrompts().length,
-        enabled: true,
-        isDefault: this.currentPrompts().length === 0,
-        ...(input.scope === undefined || input.scope.type === 'global' ? {} : { scope: input.scope }),
-      }] }],
-    })
-    if (!res.result.ok) throw new Error(res.result.error.message)
+    await this.mutateSettings([{ op: 'set', path: ['prompts'], value: [...this.currentPrompts(), {
+      id: this.slugify(input.name),
+      name: input.name,
+      description: input.description,
+      content: input.content,
+      order: this.currentPrompts().length,
+      enabled: true,
+      isDefault: this.currentPrompts().length === 0,
+      ...(input.scope === undefined || input.scope.type === 'global' ? {} : { scope: input.scope }),
+    }] }])
     await this.load()
   }
 
@@ -264,11 +294,7 @@ export class SwitchbladeSectionController {
 
   /** Persist the prompt list through the settings RPC. */
   private async writePrompts(prompts: readonly PromptRow[]): Promise<void> {
-    const res = await this.api.settings.mutate({
-      ns: 'switchblade',
-      ops: [{ op: 'set', path: ['prompts'], value: prompts }],
-    })
-    if (!res.result.ok) throw new Error(res.result.error.message)
+    await this.mutateSettings([{ op: 'set', path: ['prompts'], value: prompts }])
     await this.load()
   }
 
@@ -295,33 +321,21 @@ export class SwitchbladeSectionController {
       content: input.content,
       enabled: true,
     }]
-    const res = await this.api.settings.mutate({
-      ns: 'switchblade',
-      ops: [{ op: 'set', path: ['installedSkills'], value: next }],
-    })
-    if (!res.result.ok) throw new Error(res.result.error.message)
+    await this.mutateSettings([{ op: 'set', path: ['installedSkills'], value: next }])
     await this.load()
   }
 
   /** Toggle one installed skill's enabled state. */
   async setSkillEnabled(name: string, enabled: boolean): Promise<void> {
     const next = this.currentInstalledSkills().map((s) => s.name === name ? { ...s, enabled } : s)
-    const res = await this.api.settings.mutate({
-      ns: 'switchblade',
-      ops: [{ op: 'set', path: ['installedSkills'], value: next }],
-    })
-    if (!res.result.ok) throw new Error(res.result.error.message)
+    await this.mutateSettings([{ op: 'set', path: ['installedSkills'], value: next }])
     await this.load()
   }
 
   /** Uninstall one installed skill. */
   async uninstallSkill(name: string): Promise<void> {
     const next = this.currentInstalledSkills().filter((s) => s.name !== name)
-    const res = await this.api.settings.mutate({
-      ns: 'switchblade',
-      ops: [{ op: 'set', path: ['installedSkills'], value: next }],
-    })
-    if (!res.result.ok) throw new Error(res.result.error.message)
+    await this.mutateSettings([{ op: 'set', path: ['installedSkills'], value: next }])
     await this.load()
   }
 
@@ -333,11 +347,7 @@ export class SwitchbladeSectionController {
       description: patch.description ?? s.description,
       content: patch.content ?? s.content,
     } : s)
-    const res = await this.api.settings.mutate({
-      ns: 'switchblade',
-      ops: [{ op: 'set', path: ['installedSkills'], value: next }],
-    })
-    if (!res.result.ok) throw new Error(res.result.error.message)
+    await this.mutateSettings([{ op: 'set', path: ['installedSkills'], value: next }])
     await this.load()
   }
 
@@ -351,11 +361,7 @@ export class SwitchbladeSectionController {
    * watch sees pendingZip and installs it (skil-filesystem then discovers it).
    */
   async installSkillFromZip(name: string, dataBase64: string): Promise<void> {
-    const res = await this.api.settings.mutate({
-      ns: 'switchblade',
-      ops: [{ op: 'set', path: ['pendingZip'], value: { name, dataBase64 } }],
-    })
-    if (!res.result.ok) throw new Error(res.result.error.message)
+    await this.mutateSettings([{ op: 'set', path: ['pendingZip'], value: { name, dataBase64 } }])
     // Wait a tick for the Host watch to extract, then refresh.
     await new Promise((r) => setTimeout(r, 500))
     await this.load()
@@ -396,22 +402,14 @@ export class SwitchbladeSectionController {
    * after a short delay so the panel shows the fresh tool list / error.
    */
   async testMcpServer(name: string): Promise<void> {
-    const res = await this.api.settings.mutate({
-      ns: 'switchblade',
-      ops: [{ op: 'set', path: ['mcpTestRequest'], value: { serverName: name, ts: Date.now() } }],
-    })
-    if (!res.result.ok) throw new Error(res.result.error.message)
+    await this.mutateSettings([{ op: 'set', path: ['mcpTestRequest'], value: { serverName: name, ts: Date.now() } }])
     await new Promise((r) => setTimeout(r, 2000))
     await this.load()
   }
 
   /** Persist the MCP server config list. */
   private async writeMcpServers(servers: readonly McpServerRow[]): Promise<void> {
-    const res = await this.api.settings.mutate({
-      ns: 'switchblade',
-      ops: [{ op: 'set', path: ['mcpServers'], value: servers }],
-    })
-    if (!res.result.ok) throw new Error(res.result.error.message)
+    await this.mutateSettings([{ op: 'set', path: ['mcpServers'], value: servers }])
     await this.load()
   }
 

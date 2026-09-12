@@ -5,13 +5,6 @@
  * @module @deepseek-ai/dsh-client-ui-switchblade
  */
 
-import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
-// Type-only: pulls the locale plugin's Context merge (ctx.locale).
-import type {} from '@deepseek-ai/dsh-client-locale/client'
-// Type-only: pulls the settings shell's SlotMap merge (the 'settings.section' entry).
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-// Type-only: pulls the LocaleNamespaceMap merge slot (the 'settings.switchblade' entry).
-import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { en, NS, zh, type SwitchbladeKey } from './locales.ts'
 import { SwitchbladeSection } from './SwitchbladeSection.tsx'
 import type { SwitchbladeSectionInjected } from './SwitchbladeSection.tsx'
@@ -57,8 +50,13 @@ interface SessionsLike {
   list: { getSnapshot(): { current?: string | undefined } }
 }
 
+/** 2.0.9 settings-scope binder (`ctx.settingsScope`). */
+interface SettingsScopeBinderLike {
+  bind(spec: { namespace: string }): import('./store.ts').SettingsScopeLike
+}
+
 /** Required services (cordis fiber inject). */
-export const inject = ['slots', 'locale', 'connection', 'sessions']
+export const inject = ['slots', 'locale', 'settingsScope', 'remote', 'sessions']
 
 /**
  * Mount the Switchblade settings section.
@@ -67,7 +65,8 @@ export const inject = ['slots', 'locale', 'connection', 'sessions']
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-switchblade: dictionaries')
 
-  const api = (ctx.get('connection') as ConnectionHandle).api
+  const scope = (ctx.get('settingsScope') as SettingsScopeBinderLike).bind({ namespace: 'switchblade' })
+  const remote = ctx.get('remote') as import('./store.ts').RemoteLike
   const sessions = ctx.get('sessions') as SessionsLike
 
   // Global background/effects survives restart: the Host persists the section
@@ -76,7 +75,7 @@ export function apply(ctx: ClientContext): void {
   // status==='ready' so a not-yet-loaded snapshot never clears the backdrop.
   applyHintStyle()
   try {
-    initBackgroundClient(api)
+    initBackgroundClient(scope)
     const paintBackground = (): void => { const s = backgroundClient.getSnapshot(); if (s.status === 'ready') applyBackground(s.value) }
     backgroundClient.subscribe(paintBackground)
     const applyPersisted = (): void => { void backgroundClient.load().then((ok) => { if (!ok) setTimeout(applyPersisted, 1200) }) }
@@ -86,7 +85,7 @@ export function apply(ctx: ClientContext): void {
     console.warn('[switchblade] background init skipped:', error)
   }
 
-  const controller = new SwitchbladeSectionController(api, () => {
+  const controller = new SwitchbladeSectionController(scope, remote, () => {
     const state = sessions.list.getSnapshot()
     return state.current === undefined ? undefined : state.current
   })

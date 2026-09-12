@@ -155,14 +155,26 @@ window.__ModuleLoader__.load({
 		const GLASS_ATTR = "data-ar-glass";
 		const CSS_TAG = "prompt-skill-armory/background";
 		const BACKGROUND_CSS = `
-  .ar-bg-layer { position: fixed; inset: 0; z-index: -2; overflow: hidden; pointer-events: none; }
+  /* Backdrop pinned to the viewport at the very bottom of the stacking order.
+     z-index 0 + forcing DSH surfaces transparent lets it show through every
+     chrome (sidebar / conversation / rightbar), not just the chat area. */
+  .ar-bg-layer { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
   .ar-bg-layer .ar-bg-image { width: 100%; height: 100%; display: block; border: 0;
     object-fit: var(--ar-bg-fit, cover); opacity: var(--ar-bg-opacity, 1);
     filter: blur(var(--ar-bg-blur, 0px)); transform: scale(var(--ar-bg-scale, 1)); transform-origin: center; }
-  .ar-bg-scrim { position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  .ar-bg-scrim { position: fixed; inset: 0; z-index: 0; pointer-events: none;
     background: rgba(255,255,255, var(--ar-bg-scrim, 0.25)); }
   body[data-ds-dark-theme] .ar-bg-scrim { background: rgba(0,0,0, var(--ar-bg-scrim, 0.25)); }
-  body[${ACTIVE_ATTR}] { --dsw-alias-bg-base: transparent; --dsw-specific-sidebar-fill: transparent; }
+
+  /* Lift the app chrome above the backdrop so it stays interactive, while
+     every DSH surface background becomes transparent to reveal the wallpaper. */
+  body[${ACTIVE_ATTR}] #root { position: relative; z-index: 1; background: transparent; }
+  body[${ACTIVE_ATTR}] .dshDesktopFrame,
+  body[${ACTIVE_ATTR}] .dshDesktopConversationSurface,
+  body[${ACTIVE_ATTR}] .dshDesktopSidebarSurface,
+  body[${ACTIVE_ATTR}] .dshDesktopRightbarSurface { background: transparent !important; }
+  body[${ACTIVE_ATTR}] { --dsw-alias-bg-base: transparent; --dsw-alias-bg-layer-1: transparent; --dsw-specific-sidebar-fill: transparent; }
+
   body[${GLASS_ATTR}] [data-composer-card],
   body[${GLASS_ATTR}] [class*="_bubble"]:not([role="tooltip"]),
   body[${GLASS_ATTR}] .md-code-block,
@@ -230,7 +242,11 @@ window.__ModuleLoader__.load({
 				try {
 					injectBackgroundCss();
 					const hasSource = settings.url !== "" || settings.uploadId !== "";
-					for (const prop of ["--dsw-alias-bg-base", "--dsw-specific-sidebar-fill"]) {
+					for (const prop of [
+						"--dsw-alias-bg-base",
+						"--dsw-alias-bg-layer-1",
+						"--dsw-specific-sidebar-fill"
+					]) {
 						this.rememberOnce(prop);
 						document.body.style.setProperty(prop, "transparent");
 					}
@@ -357,17 +373,17 @@ window.__ModuleLoader__.load({
 		const notifyBg = () => {
 			for (const l of bgListeners) l();
 		};
-		let bgApi;
-		/** Bind the transport to a live connection API (set once at plugin apply). */
-		function initBackgroundClient(api) {
-			bgApi = api;
+		let bgScope;
+		/** Bind the transport to the switchblade settings scope (set once at plugin apply). */
+		function initBackgroundClient(scope) {
+			bgScope = scope;
 		}
 		/** Surface key: separate wallpaper per web vs desktop (they share the settings doc). */
 		const isDesktopSurface = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("electron");
 		const surfaceKey = () => isDesktopSurface ? "backgroundDesktop" : "backgroundWeb";
 		/** Read the background section for the current surface from the switchblade settings. */
 		function readSection(value) {
-			const raw = (value.namespaces?.find((n) => n.ns === "switchblade")?.value)?.[surfaceKey()];
+			const raw = value?.[surfaceKey()];
 			return {
 				...DEFAULT_BACKGROUND,
 				...typeof raw === "object" && raw !== null ? raw : {}
@@ -385,15 +401,15 @@ window.__ModuleLoader__.load({
 			},
 			/** Fetch the durable section. @returns true on success (status ready). */
 			async load() {
-				if (bgApi === void 0) {
+				if (bgScope === void 0) {
 					bgState.status = "error";
 					return false;
 				}
 				try {
-					const res = await bgApi.settings.describe({});
-					if (!res.result.ok) throw new Error(res.result.error.message);
+					const snap = bgScope.getSnapshot();
+					if (snap.status !== "ready" || snap.value === void 0) return false;
 					bgState.status = "ready";
-					bgState.value = readSection(res.result.value);
+					bgState.value = readSection(snap.value);
 					notifyBg();
 					return true;
 				} catch {
@@ -402,17 +418,13 @@ window.__ModuleLoader__.load({
 				}
 			},
 			async save(section) {
-				if (bgApi === void 0) return;
+				if (bgScope === void 0) return;
 				try {
-					const res = await bgApi.settings.mutate({
-						ns: "switchblade",
-						ops: [{
-							op: "set",
-							path: [surfaceKey()],
-							value: section
-						}]
-					});
-					if (!res.result.ok) throw new Error(res.result.error.message);
+					await bgScope.mutate([{
+						op: "set",
+						path: [surfaceKey()],
+						value: section
+					}]);
 					bgState.status = "ready";
 					bgState.value = { ...section };
 				} catch {
@@ -957,7 +969,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.10.0";
+		const ARMORY_VERSION = "0.10.1";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;
@@ -3240,13 +3252,26 @@ window.__ModuleLoader__.load({
 			return error instanceof Error ? error.message : String(error);
 		}
 		var SwitchbladeSectionController = class {
-			api;
+			scope;
+			remote;
 			sessionId;
 			/** Snapshot store backing the section's view state. */
 			store = createSnapshotStore(IDLE);
-			constructor(api, sessionId) {
-				this.api = api;
+			constructor(scope, remote, sessionId) {
+				this.scope = scope;
+				this.remote = remote;
 				this.sessionId = sessionId;
+			}
+			/** 2.0.9 settings read: scope mirror snapshot (never the old api.settings). */
+			describeSettings() {
+				const snap = this.scope.getSnapshot();
+				if (snap.status !== "ready" || snap.value === void 0) return void 0;
+				return this.sectionFromSettings(snap.value, "switchblade");
+			}
+			/** 2.0.9 settings write: scope.mutate(ops) — Host fold + re-inject. */
+			async mutateSettings(ops) {
+				if (this.scope.getSnapshot().status !== "ready") throw new Error("settings scope not ready");
+				await this.scope.mutate(ops);
 			}
 			/**
 			* Load skills, prompts, and installed skills. Prompts and installed
@@ -3260,16 +3285,14 @@ window.__ModuleLoader__.load({
 				});
 				try {
 					const sessionId = this.sessionId?.();
-					const calls = [this.api.settings.describe({})];
-					if (sessionId !== void 0) calls.push(this.api.skills.list({ sessionId }));
-					const [settingsRes, skillRes] = await Promise.all(calls);
-					if (!settingsRes.result.ok) throw new Error(`settings.describe: ${settingsRes.result.error.message}`);
-					const skills = skillRes !== void 0 && skillRes.result.ok ? skillRes.result.value.skills.map((skill) => ({
+					const calls = [Promise.resolve(this.describeSettings())];
+					if (sessionId !== void 0) calls.push(this.remote.skills.list({ request: { sessionId } }));
+					const [switchbladeSection, skillRes] = await Promise.all(calls);
+					const skills = skillRes !== void 0 && skillRes.ok && skillRes.value !== void 0 ? skillRes.value.skills.map((skill) => ({
 						name: skill.name,
 						description: skill.description,
 						modelInvocable: skill.modelInvocable
 					})) : [];
-					const switchbladeSection = this.sectionFromSettings(settingsRes.result.value, "switchblade");
 					const prompts = Array.isArray(switchbladeSection?.prompts) ? switchbladeSection.prompts : [];
 					const installedSkills = Array.isArray(switchbladeSection?.installedSkills) ? switchbladeSection.installedSkills.map((s) => ({
 						name: s.name ?? "",
@@ -3311,9 +3334,13 @@ window.__ModuleLoader__.load({
 					});
 				}
 			}
-			/** Read one namespace's user section from a settings.describe value. */
+			/** Read one namespace's section from a settings value. The 2.0.9 scope
+			* snapshot carries the bound namespace's own value; older describe payloads
+			* carry a `namespaces[]` table — accept both. */
 			sectionFromSettings(value, ns) {
 				if (typeof value !== "object" || value === null) return void 0;
+				const asSection = value;
+				if (Array.isArray(asSection.prompts) || Array.isArray(asSection.installedSkills) || asSection.mcpServers !== void 0) return asSection;
 				const entries = value.namespaces;
 				if (!Array.isArray(entries)) return void 0;
 				for (const entry of entries) {
@@ -3326,24 +3353,20 @@ window.__ModuleLoader__.load({
 			}
 			/** Add a prompt. */
 			async addPrompt(input) {
-				const res = await this.api.settings.mutate({
-					ns: "switchblade",
-					ops: [{
-						op: "set",
-						path: ["prompts"],
-						value: [...this.currentPrompts(), {
-							id: this.slugify(input.name),
-							name: input.name,
-							description: input.description,
-							content: input.content,
-							order: this.currentPrompts().length,
-							enabled: true,
-							isDefault: this.currentPrompts().length === 0,
-							...input.scope === void 0 || input.scope.type === "global" ? {} : { scope: input.scope }
-						}]
+				await this.mutateSettings([{
+					op: "set",
+					path: ["prompts"],
+					value: [...this.currentPrompts(), {
+						id: this.slugify(input.name),
+						name: input.name,
+						description: input.description,
+						content: input.content,
+						order: this.currentPrompts().length,
+						enabled: true,
+						isDefault: this.currentPrompts().length === 0,
+						...input.scope === void 0 || input.scope.type === "global" ? {} : { scope: input.scope }
 					}]
-				});
-				if (!res.result.ok) throw new Error(res.result.error.message);
+				}]);
 				await this.load();
 			}
 			/** Toggle one prompt's enabled state. */
@@ -3380,15 +3403,11 @@ window.__ModuleLoader__.load({
 			}
 			/** Persist the prompt list through the settings RPC. */
 			async writePrompts(prompts) {
-				const res = await this.api.settings.mutate({
-					ns: "switchblade",
-					ops: [{
-						op: "set",
-						path: ["prompts"],
-						value: prompts
-					}]
-				});
-				if (!res.result.ok) throw new Error(res.result.error.message);
+				await this.mutateSettings([{
+					op: "set",
+					path: ["prompts"],
+					value: prompts
+				}]);
 				await this.load();
 			}
 			/** Current prompt list from the loaded snapshot. */
@@ -3408,15 +3427,11 @@ window.__ModuleLoader__.load({
 					content: input.content,
 					enabled: true
 				}];
-				const res = await this.api.settings.mutate({
-					ns: "switchblade",
-					ops: [{
-						op: "set",
-						path: ["installedSkills"],
-						value: next
-					}]
-				});
-				if (!res.result.ok) throw new Error(res.result.error.message);
+				await this.mutateSettings([{
+					op: "set",
+					path: ["installedSkills"],
+					value: next
+				}]);
 				await this.load();
 			}
 			/** Toggle one installed skill's enabled state. */
@@ -3425,29 +3440,21 @@ window.__ModuleLoader__.load({
 					...s,
 					enabled
 				} : s);
-				const res = await this.api.settings.mutate({
-					ns: "switchblade",
-					ops: [{
-						op: "set",
-						path: ["installedSkills"],
-						value: next
-					}]
-				});
-				if (!res.result.ok) throw new Error(res.result.error.message);
+				await this.mutateSettings([{
+					op: "set",
+					path: ["installedSkills"],
+					value: next
+				}]);
 				await this.load();
 			}
 			/** Uninstall one installed skill. */
 			async uninstallSkill(name) {
 				const next = this.currentInstalledSkills().filter((s) => s.name !== name);
-				const res = await this.api.settings.mutate({
-					ns: "switchblade",
-					ops: [{
-						op: "set",
-						path: ["installedSkills"],
-						value: next
-					}]
-				});
-				if (!res.result.ok) throw new Error(res.result.error.message);
+				await this.mutateSettings([{
+					op: "set",
+					path: ["installedSkills"],
+					value: next
+				}]);
 				await this.load();
 			}
 			/** Update an installed skill's name/description/content. */
@@ -3458,15 +3465,11 @@ window.__ModuleLoader__.load({
 					description: patch.description ?? s.description,
 					content: patch.content ?? s.content
 				} : s);
-				const res = await this.api.settings.mutate({
-					ns: "switchblade",
-					ops: [{
-						op: "set",
-						path: ["installedSkills"],
-						value: next
-					}]
-				});
-				if (!res.result.ok) throw new Error(res.result.error.message);
+				await this.mutateSettings([{
+					op: "set",
+					path: ["installedSkills"],
+					value: next
+				}]);
 				await this.load();
 			}
 			/** Current installed skills from the loaded snapshot. */
@@ -3478,18 +3481,14 @@ window.__ModuleLoader__.load({
 			* watch sees pendingZip and installs it (skil-filesystem then discovers it).
 			*/
 			async installSkillFromZip(name, dataBase64) {
-				const res = await this.api.settings.mutate({
-					ns: "switchblade",
-					ops: [{
-						op: "set",
-						path: ["pendingZip"],
-						value: {
-							name,
-							dataBase64
-						}
-					}]
-				});
-				if (!res.result.ok) throw new Error(res.result.error.message);
+				await this.mutateSettings([{
+					op: "set",
+					path: ["pendingZip"],
+					value: {
+						name,
+						dataBase64
+					}
+				}]);
 				await new Promise((r) => setTimeout(r, 500));
 				await this.load();
 			}
@@ -3526,32 +3525,24 @@ window.__ModuleLoader__.load({
 			* after a short delay so the panel shows the fresh tool list / error.
 			*/
 			async testMcpServer(name) {
-				const res = await this.api.settings.mutate({
-					ns: "switchblade",
-					ops: [{
-						op: "set",
-						path: ["mcpTestRequest"],
-						value: {
-							serverName: name,
-							ts: Date.now()
-						}
-					}]
-				});
-				if (!res.result.ok) throw new Error(res.result.error.message);
+				await this.mutateSettings([{
+					op: "set",
+					path: ["mcpTestRequest"],
+					value: {
+						serverName: name,
+						ts: Date.now()
+					}
+				}]);
 				await new Promise((r) => setTimeout(r, 2e3));
 				await this.load();
 			}
 			/** Persist the MCP server config list. */
 			async writeMcpServers(servers) {
-				const res = await this.api.settings.mutate({
-					ns: "switchblade",
-					ops: [{
-						op: "set",
-						path: ["mcpServers"],
-						value: servers
-					}]
-				});
-				if (!res.result.ok) throw new Error(res.result.error.message);
+				await this.mutateSettings([{
+					op: "set",
+					path: ["mcpServers"],
+					value: servers
+				}]);
 				await this.load();
 			}
 			/** Current MCP server list from the loaded snapshot. */
@@ -3561,11 +3552,18 @@ window.__ModuleLoader__.load({
 		};
 		//#endregion
 		//#region src/client/index.ts
+		/**
+		* Switchblade management page, browser half: registers the `settings.section`
+		* navigation entry and renders the edgelord panel from the connection RPC
+		* state. Global scope (root) — one management seat for every session.
+		* @module @deepseek-ai/dsh-client-ui-switchblade
+		*/
 		/** Required services (cordis fiber inject). */
 		const inject = [
 			"slots",
 			"locale",
-			"connection",
+			"settingsScope",
+			"remote",
 			"sessions"
 		];
 		/**
@@ -3577,11 +3575,12 @@ window.__ModuleLoader__.load({
 				zh,
 				en
 			}), "ui-switchblade: dictionaries");
-			const api = ctx.get("connection").api;
+			const scope = ctx.get("settingsScope").bind({ namespace: "switchblade" });
+			const remote = ctx.get("remote");
 			const sessions = ctx.get("sessions");
 			applyHintStyle();
 			try {
-				initBackgroundClient(api);
+				initBackgroundClient(scope);
 				const paintBackground = () => {
 					const s = backgroundClient.getSnapshot();
 					if (s.status === "ready") applyBackground(s.value);
@@ -3596,7 +3595,7 @@ window.__ModuleLoader__.load({
 			} catch (error) {
 				console.warn("[switchblade] background init skipped:", error);
 			}
-			const controller = new SwitchbladeSectionController(api, () => {
+			const controller = new SwitchbladeSectionController(scope, remote, () => {
 				const state = sessions.list.getSnapshot();
 				return state.current === void 0 ? void 0 : state.current;
 			});
