@@ -6,6 +6,12 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.10.3] - 2026-09
+
+### 修复 · Fixed
+- **输入框提示样式精准适配**：2.0.9 的提示/占位文本渲染为 `[data-composer-placeholder]` 独立 div（不是 `input::placeholder`）。提示样式直接作用于该元素，渐变色补 `display:inline-block` 确保 `background-clip:text` 生效。另确认 2.0.9 已移除旧 dock StatsLine（`span[aria-hidden="|"]`）。
+  **Hint style precisely retargeted**: 2.0.9 renders the composer hint/placeholder as a `[data-composer-placeholder]` div (not `input::placeholder`). The style now targets that element, with `display:inline-block` so gradient `background-clip:text` renders. Also confirmed the old StatsLine dock (`span[aria-hidden="|"]`) is gone in 2.0.9.
+
 ## [0.10.2] - 2026-09
 
 ### 修复 · Fixed

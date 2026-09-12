@@ -329,10 +329,11 @@ export function applyHintStyle(): void {
       'letter-spacing:0.3px',
       'font-weight:600',
       'opacity:0.95',
-      grad !== '' ? `background-image:${grad};-webkit-background-clip:text;background-clip:text;color:transparent` : `color:${color}`,
+      grad !== '' ? 'display:inline-block;background-image:' + grad + ';-webkit-background-clip:text;background-clip:text;color:transparent' : `color:${color}`,
     ].join(';')
     // Placeholder + any inline hint text inside the composer card.
-    tag.textContent = `[data-composer-card] input::placeholder,[data-composer-card] textarea::placeholder{${props}}
+    tag.textContent = `[data-composer-placeholder]{${props}}
+[data-composer-card] input::placeholder,[data-composer-card] textarea::placeholder{${props}}
 [data-composer-card] [class*="_hint"]{${props}}`
     // The dock's StatsLine roots are CSS-module hashed; locate via its aria-hidden "|" separators.
     const statsStyle = (root: HTMLElement): void => {

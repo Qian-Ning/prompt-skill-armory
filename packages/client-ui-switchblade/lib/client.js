@@ -490,9 +490,10 @@ window.__ModuleLoader__.load({
 					"letter-spacing:0.3px",
 					"font-weight:600",
 					"opacity:0.95",
-					grad !== "" ? `background-image:${grad};-webkit-background-clip:text;background-clip:text;color:transparent` : `color:${color}`
+					grad !== "" ? "display:inline-block;background-image:" + grad + ";-webkit-background-clip:text;background-clip:text;color:transparent" : `color:${color}`
 				].join(";");
-				tag.textContent = `[data-composer-card] input::placeholder,[data-composer-card] textarea::placeholder{${props}}
+				tag.textContent = `[data-composer-placeholder]{${props}}
+[data-composer-card] input::placeholder,[data-composer-card] textarea::placeholder{${props}}
 [data-composer-card] [class*="_hint"]{${props}}`;
 				const statsStyle = (root) => {
 					if (grad !== "") {
@@ -976,7 +977,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.10.2";
+		const ARMORY_VERSION = "0.10.3";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;
