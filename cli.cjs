@@ -141,13 +141,24 @@ function mountClientPanel(profileDir) {
     console.log(`  · ui-switchblade already mounted in ${patchPath}`)
     return
   }
-  // Preserve any real user entries, dropping an old bare `[]` line.
+  // Block-level dedup: if ANY Armory-managed line (comment header, the id/name
+  // pair, or a bare stub we previously wrote) is present, drop every one of
+  // them. Line-based filtering used to keep the header + bare `- insert:`
+  // lines (they don't contain the literal "ui-switchblade"), re-appending a
+  // truncated insert block on every install/update — which the 2.0.9 patch
+  // parser rejects (recovery mode). This must remove the whole block at once.
+  const hasArmory = /Prompt-SkillArmory client panel|ui-switchblade/.test(existing)
   const meaningful = existing
     .split('\n')
     .map((l) => l.replace(/\r$/, ''))
     .filter((l) => {
       const t = l.trim()
-      return t !== '' && t !== '[]' && !(l.includes('ui-switchblade') && (l.includes('id:') || l.includes('name:') || l.includes('# Prompt-SkillArmory')))
+      if (t === '' || t === '[]') return false
+      if (!hasArmory) return true
+      if (t.includes('Prompt-SkillArmory client panel')) return false
+      if (t === '- insert:') return false
+      if (t.includes('ui-switchblade')) return false
+      return true
     })
   const base = meaningful.length > 0 ? meaningful.join('\n') + '\n' : ''
   writeFileSync(patchPath, `${base}${canonical}`)
@@ -186,11 +197,18 @@ function removeBundle(profileDir) {
 function unmountClientPanel(profileDir) {
   const patchPath = join(profileDir, 'cordis.patch.yml')
   if (!existsSync(patchPath)) { console.log('  · no cordis.patch.yml'); return }
+  // Same block-level removal: strip every Armory-managed line, keep user rows.
+  const hasArmory = /Prompt-SkillArmory client panel|ui-switchblade/.test(readFileSync(patchPath, 'utf8'))
   const meaningful = readFileSync(patchPath, 'utf8')
     .split('\n').map((l) => l.replace(/\r$/, ''))
     .filter((l) => {
       const t = l.trim()
-      return t !== '' && t !== '[]' && !(l.includes('ui-switchblade') && (l.includes('id:') || l.includes('name:') || l.includes('# Prompt-SkillArmory')))
+      if (t === '' || t === '[]') return false
+      if (!hasArmory) return true
+      if (t.includes('Prompt-SkillArmory client panel')) return false
+      if (t === '- insert:') return false
+      if (t.includes('ui-switchblade')) return false
+      return true
     })
   if (meaningful.length === 0) {
     rmSync(patchPath, { force: true })

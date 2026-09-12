@@ -958,7 +958,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.9.7";
+		const ARMORY_VERSION = "0.9.8";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;
@@ -1247,6 +1247,8 @@ window.__ModuleLoader__.load({
 			const [promptName, setPromptName] = (0, react.useState)("");
 			const [promptDesc, setPromptDesc] = (0, react.useState)("");
 			const [promptContent, setPromptContent] = (0, react.useState)("");
+			const [promptScopeType, setPromptScopeType] = (0, react.useState)("global");
+			const [promptScopeKey, setPromptScopeKey] = (0, react.useState)("");
 			const [skillName, setSkillName] = (0, react.useState)("");
 			const [skillDesc, setSkillDesc] = (0, react.useState)("");
 			const [skillContent, setSkillContent] = (0, react.useState)("");
@@ -1554,19 +1556,30 @@ window.__ModuleLoader__.load({
 			const submitPrompt = () => {
 				if (promptName.trim() === "" || promptContent.trim() === "") return;
 				setBusy(true);
+				const scope = promptScopeType === "global" ? void 0 : promptScopeType === "project" ? {
+					type: "project",
+					key: promptScopeKey.trim()
+				} : {
+					type: "session",
+					id: promptScopeKey.trim()
+				};
 				(editingPromptId !== void 0 ? updatePrompt(editingPromptId, {
 					name: promptName,
 					description: promptDesc,
-					content: promptContent
+					content: promptContent,
+					scope
 				}) : addPrompt({
 					name: promptName,
 					description: promptDesc,
-					content: promptContent
+					content: promptContent,
+					scope
 				})).catch((error) => console.error("[switchblade] prompt save failed", error)).finally(() => {
 					setBusy(false);
 					setPromptName("");
 					setPromptDesc("");
 					setPromptContent("");
+					setPromptScopeType("global");
+					setPromptScopeKey("");
 					setEditingPromptId(void 0);
 				});
 			};
@@ -1575,6 +1588,14 @@ window.__ModuleLoader__.load({
 				setPromptName(row.name);
 				setPromptDesc(row.desc);
 				setPromptContent(row.content ?? "");
+				const s = row.scope;
+				if (s !== void 0 && (s.type === "project" || s.type === "session")) {
+					setPromptScopeType(s.type);
+					setPromptScopeKey(s.type === "project" ? s.key ?? "" : s.id ?? "");
+				} else {
+					setPromptScopeType("global");
+					setPromptScopeKey("");
+				}
 			};
 			const togglePrompt = (id, enabled) => {
 				setPromptEnabled(id, enabled).catch((error) => console.error("[switchblade] toggle failed", error));
@@ -1635,7 +1656,8 @@ window.__ModuleLoader__.load({
 				promptId: p.id,
 				isDefault: p.isDefault,
 				content: p.content,
-				promptEnabled: p.enabled
+				promptEnabled: p.enabled,
+				scope: p.scope
 			}));
 			const managedNames = new Set(state.installedSkills.map((s) => s.name));
 			const managedRows = state.installedSkills.map((s) => ({
@@ -1828,6 +1850,47 @@ window.__ModuleLoader__.load({
 											onChange: (e) => setPromptContent(e.target.value)
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											style: {
+												display: "flex",
+												gap: "6px",
+												alignItems: "center",
+												flexWrap: "wrap"
+											},
+											children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													style: {
+														...CSS.hint,
+														width: "76px",
+														flex: "none"
+													},
+													children: "作用域"
+												}),
+												[
+													"global",
+													"project",
+													"session"
+												].map((st) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													style: {
+														...CSS.actionBtn,
+														...promptScopeType === st ? CSS.tabActive : {}
+													},
+													onClick: () => setPromptScopeType(st),
+													children: st === "global" ? "全局" : st === "project" ? "指定项目" : "指定会话"
+												}, st)),
+												promptScopeType !== "global" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+													style: {
+														...CSS.input,
+														maxWidth: "240px",
+														flex: 1,
+														minWidth: "120px"
+													},
+													placeholder: promptScopeType === "project" ? "项目目录名（如 qc）" : "会话 id（session-…）",
+													value: promptScopeKey,
+													onChange: (e) => setPromptScopeKey(e.target.value)
+												})
+											]
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											style: CSS.actions,
 											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												style: CSS.actionBtn,
@@ -1841,6 +1904,8 @@ window.__ModuleLoader__.load({
 													setPromptName("");
 													setPromptDesc("");
 													setPromptContent("");
+													setPromptScopeType("global");
+													setPromptScopeKey("");
 												},
 												children: t("cancel")
 											})]
@@ -1863,16 +1928,26 @@ window.__ModuleLoader__.load({
 										children: [
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 												style: CSS.cardTop,
-												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-													style: CSS.name,
-													children: [row.isDefault ? "★ " : "", row.name]
-												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-													style: {
-														...CSS.badge,
-														...row.state === "enabled" ? CSS.badgeEnabled : CSS.badgeDisabled
-													},
-													children: row.state === "enabled" ? t("enabled") : t("disabled")
-												})]
+												children: [
+													/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+														style: CSS.name,
+														children: [row.isDefault ? "★ " : "", row.name]
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+														style: {
+															...CSS.badge,
+															...row.state === "enabled" ? CSS.badgeEnabled : CSS.badgeDisabled
+														},
+														children: row.state === "enabled" ? t("enabled") : t("disabled")
+													}),
+													row.scope !== void 0 && row.scope.type !== "global" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+														style: {
+															...CSS.badge,
+															...CSS.badgeInstalled
+														},
+														children: row.scope.type === "project" ? `项目：${row.scope.key}` : `会话：${row.scope.id.slice(0, 12)}…`
+													})
+												]
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 												style: CSS.desc,
@@ -3244,7 +3319,8 @@ window.__ModuleLoader__.load({
 							content: input.content,
 							order: this.currentPrompts().length,
 							enabled: true,
-							isDefault: this.currentPrompts().length === 0
+							isDefault: this.currentPrompts().length === 0,
+							...input.scope === void 0 || input.scope.type === "global" ? {} : { scope: input.scope }
 						}]
 					}]
 				});
@@ -3272,13 +3348,14 @@ window.__ModuleLoader__.load({
 				const next = this.currentPrompts().filter((p) => p.id !== id);
 				await this.writePrompts(next);
 			}
-			/** Update a prompt's name/description/content. */
+			/** Update a prompt's name/description/content/scope. */
 			async updatePrompt(id, patch) {
 				const next = this.currentPrompts().map((p) => p.id === id ? {
 					...p,
 					name: patch.name?.trim() || p.name,
 					description: patch.description ?? p.description,
-					content: patch.content ?? p.content
+					content: patch.content ?? p.content,
+					...patch.scope === void 0 ? {} : patch.scope.type === "global" ? { scope: void 0 } : { scope: patch.scope }
 				} : p);
 				await this.writePrompts(next);
 			}

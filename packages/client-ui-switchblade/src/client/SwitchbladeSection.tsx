@@ -331,7 +331,7 @@ function BookIcon({ size = 16 }: { size?: number }): JSX.Element {
 type TabKey = 'prompts' | 'skills' | 'mcp' | 'wallpaper' | 'chat' | 'stats'
 
 /** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-const ARMORY_VERSION = '0.9.7'
+const ARMORY_VERSION = '0.9.8'
 
 /** Compact duration: 45.2s / 2m42s / 1h05m. */
 function fmtDuration(ms: number): string {
@@ -500,6 +500,8 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
   const [promptName, setPromptName] = useState('')
   const [promptDesc, setPromptDesc] = useState('')
   const [promptContent, setPromptContent] = useState('')
+  const [promptScopeType, setPromptScopeType] = useState<'global' | 'project' | 'session'>('global')
+  const [promptScopeKey, setPromptScopeKey] = useState('')
   const [skillName, setSkillName] = useState('')
   const [skillDesc, setSkillDesc] = useState('')
   const [skillContent, setSkillContent] = useState('')
@@ -752,23 +754,36 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
   const submitPrompt = (): void => {
     if (promptName.trim() === '' || promptContent.trim() === '') return
     setBusy(true)
+    const scope = promptScopeType === 'global'
+      ? undefined
+      : promptScopeType === 'project'
+        ? { type: 'project' as const, key: promptScopeKey.trim() }
+        : { type: 'session' as const, id: promptScopeKey.trim() }
     const action = editingPromptId !== undefined
-      ? updatePrompt(editingPromptId, { name: promptName, description: promptDesc, content: promptContent })
-      : addPrompt({ name: promptName, description: promptDesc, content: promptContent })
+      ? updatePrompt(editingPromptId, { name: promptName, description: promptDesc, content: promptContent, scope })
+      : addPrompt({ name: promptName, description: promptDesc, content: promptContent, scope })
     void action
       .catch((error: unknown) => console.error('[switchblade] prompt save failed', error))
       .finally(() => {
         setBusy(false)
         setPromptName(''); setPromptDesc(''); setPromptContent('')
+        setPromptScopeType('global'); setPromptScopeKey('')
         setEditingPromptId(undefined)
       })
   }
 
-  const startEditPrompt = (row: { promptId: string; name: string; desc: string; content?: string }): void => {
+  const startEditPrompt = (row: { promptId: string; name: string; desc: string; content?: string; scope?: { type: string; key?: string; id?: string } }): void => {
     setEditingPromptId(row.promptId)
     setPromptName(row.name)
     setPromptDesc(row.desc)
     setPromptContent(row.content ?? '')
+    const s = row.scope
+    if (s !== undefined && (s.type === 'project' || s.type === 'session')) {
+      setPromptScopeType(s.type)
+      setPromptScopeKey(s.type === 'project' ? (s.key ?? '') : (s.id ?? ''))
+    } else {
+      setPromptScopeType('global'); setPromptScopeKey('')
+    }
   }
 
   const togglePrompt = (id: string, enabled: boolean): void => {
@@ -824,7 +839,7 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
 
   const promptRows = state.prompts.map((p) => ({
     id: p.id, name: p.name, desc: p.description, state: p.enabled ? ('enabled' as const) : ('disabled' as const),
-    promptId: p.id, isDefault: p.isDefault, content: p.content, promptEnabled: p.enabled,
+    promptId: p.id, isDefault: p.isDefault, content: p.content, promptEnabled: p.enabled, scope: p.scope,
   }))
 
   // Merge managed + scanned skills into ONE list, managed first.
@@ -908,12 +923,27 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
               <input style={CSS.input} placeholder={t('promptNamePlaceholder')} value={promptName} onChange={(e) => setPromptName(e.target.value)} />
               <input style={CSS.input} placeholder={t('promptDescPlaceholder')} value={promptDesc} onChange={(e) => setPromptDesc(e.target.value)} />
               <textarea style={CSS.textarea} placeholder={t('promptContentPlaceholder')} value={promptContent} onChange={(e) => setPromptContent(e.target.value)} />
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' as const }}>
+                <span style={{ ...CSS.hint, width: '76px', flex: 'none' }}>作用域</span>
+                {(['global', 'project', 'session'] as const).map((st) => (
+                  <button key={st} style={{ ...CSS.actionBtn, ...(promptScopeType === st ? CSS.tabActive : {}) }}
+                    onClick={() => setPromptScopeType(st)}>
+                    {st === 'global' ? '全局' : st === 'project' ? '指定项目' : '指定会话'}
+                  </button>
+                ))}
+                {promptScopeType !== 'global' && (
+                  <input style={{ ...CSS.input, maxWidth: '240px', flex: 1, minWidth: '120px' }}
+                    placeholder={promptScopeType === 'project' ? '项目目录名（如 qc）' : '会话 id（session-…）'}
+                    value={promptScopeKey}
+                    onChange={(e) => setPromptScopeKey(e.target.value)} />
+                )}
+              </div>
               <div style={CSS.actions}>
                 <button style={CSS.actionBtn} disabled={busy} onClick={submitPrompt}>
                   {editingPromptId !== undefined ? t('save') : t('addPrompt')}
                 </button>
                 {editingPromptId !== undefined && (
-                  <button style={CSS.actionBtn} onClick={() => { setEditingPromptId(undefined); setPromptName(''); setPromptDesc(''); setPromptContent('') }}>{t('cancel')}</button>
+                  <button style={CSS.actionBtn} onClick={() => { setEditingPromptId(undefined); setPromptName(''); setPromptDesc(''); setPromptContent(''); setPromptScopeType('global'); setPromptScopeKey('') }}>{t('cancel')}</button>
                 )}
               </div>
             </div>
@@ -928,6 +958,11 @@ export function SwitchbladeSection(props: SwitchbladeSectionProps): JSX.Element 
                       <span style={{ ...CSS.badge, ...row.state === 'enabled' ? CSS.badgeEnabled : CSS.badgeDisabled }}>
                         {row.state === 'enabled' ? t('enabled') : t('disabled')}
                       </span>
+                      {row.scope !== undefined && row.scope.type !== 'global' && (
+                        <span style={{ ...CSS.badge, ...CSS.badgeInstalled }}>
+                          {row.scope.type === 'project' ? `项目：${row.scope.key}` : `会话：${row.scope.id.slice(0, 12)}…`}
+                        </span>
+                      )}
                     </div>
                     <div style={CSS.desc}>{row.desc || row.content?.slice(0, 80)}</div>
                     <div style={CSS.actions}>

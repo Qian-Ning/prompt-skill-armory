@@ -6,6 +6,18 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.9.8] - 2026-08
+
+### 修复 · Fixed
+- **DSH Desktop 2.0.9 恢复模式**：安装器对 `cordis.patch.yml` 的行级去重会把注释行和裸 `- insert:` 当用户条目保留，每次安装/更新都叠加一段残缺 insert 块；2.0.9 的 patch 解析器拒绝无 body 的 insert 导致启动崩溃。改为**块级去重**（命中任一 Armory 管理行即整块清理），并重置已有 profile 的 patch 文件。
+  **DSH Desktop 2.0.9 recovery mode**: the installer's line-based dedup kept the comment/header and bare `- insert:` lines as "user entries", appending a truncated insert block on every install/update; 2.0.9's patch parser rejects body-less inserts and crashed at boot. Now block-level (any Armory-managed line clears the whole block), and existing profile patch files are reset.
+- **技能名含点号无法注册**：DSH 技能名必须是 kebab-case（`gpt-5.6-sol` 被拒）。安装/注册时自动规范化名字（点号转连字符）。
+  Skills with dots failed to register: DSH requires kebab-case names. Names are now normalized on install/register.
+
+### 新增 · Added
+- **提示词作用域（精细化差分）**：每个提示词可选 全局 / 指定项目（按 cwd 目录名）/ 指定会话（session id）。Host 通过 systemPrompt section 的 text 函数按当前 agent 的 cwd/sessionId 匹配，不匹配返回空串（渲染时自动过滤）——零全局污染，其他项目/会话完全不受影响。
+  **Prompt scoping (fine-grained diff)**: each prompt can target global / a specific project (cwd basename) / a specific session (id). The Host matches via a text provider against the assembling agent's cwd/sessionId and returns '' otherwise (filtered at render) — no global leakage.
+
 ## [0.9.7] - 2026-08
 
 ### 修复 · Fixed

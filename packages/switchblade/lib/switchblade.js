@@ -1473,7 +1473,8 @@ var Switchblade = class extends Service {
 			content: input.content,
 			order: prompts.length,
 			enabled: true,
-			isDefault: prompts.length === 0
+			isDefault: prompts.length === 0,
+			...input.scope === void 0 || input.scope.type === "global" ? {} : { scope: input.scope }
 		};
 		await this.writePrompts([...prompts, prompt]);
 		this.applyPromptRegistrations();
@@ -1504,7 +1505,8 @@ var Switchblade = class extends Service {
 				...p,
 				name: patch.name?.trim() || p.name,
 				description: patch.description?.trim() ?? p.description,
-				content: patch.content ?? p.content
+				content: patch.content ?? p.content,
+				...patch.scope === void 0 ? {} : patch.scope.type === "global" ? { scope: void 0 } : { scope: patch.scope }
 			};
 		});
 		await this.writePrompts(next);
@@ -1523,6 +1525,22 @@ var Switchblade = class extends Service {
 			path: ["prompts"],
 			value: prompts
 		}]);
+	}
+	/**
+	* Whether a prompt's scope covers the agent assembling the system prompt.
+	* Global covers everything; project matches the session cwd basename;
+	* session matches the exact session id. Missing agent context (diagnostics,
+	* assembly outside a session) only matches global prompts.
+	*/
+	promptScopeMatches(prompt, context) {
+		const scope = prompt.scope;
+		if (scope === void 0 || scope.type === "global") return true;
+		if (scope.type === "project") {
+			const cwd = context?.agent?.session?.header?.cwd;
+			if (cwd === void 0 || cwd === "") return false;
+			return (cwd.replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? "") === scope.key;
+		}
+		return context?.agent?.session?.id === scope.id;
 	}
 	/**
 	* Reconcile live systemPrompt registrations against the persisted prompt
@@ -1548,7 +1566,7 @@ var Switchblade = class extends Service {
 					const dispose = system.section({
 						name: key,
 						order: 200 + prompt.order,
-						text: prompt.content
+						text: (context) => this.promptScopeMatches(prompt, context) ? prompt.content : ""
 					});
 					this.promptSections.set(prompt.id, dispose);
 					this.ctx.logger.warn(`[switchblade] registered prompt section ${key} (order ${200 + prompt.order})`);
@@ -1576,13 +1594,17 @@ var Switchblade = class extends Service {
 			if (skills === void 0 || typeof skills.register !== "function") return;
 			const wanted = /* @__PURE__ */ new Set();
 			for (const def of this.settings().installedSkills) {
-				const id = `${ID_PREFIX.skill}:${def.name}`;
+				const safe = normalizeSkillName(def.name);
+				const id = `${ID_PREFIX.skill}:${safe}`;
 				if (!(def.enabled ?? true)) continue;
 				wanted.add(id);
 				if (!this.registrations.has(id)) try {
-					this.registrations.set(id, skills.register(def));
+					this.registrations.set(id, skills.register({
+						...def,
+						name: safe
+					}));
 				} catch (error) {
-					this.ctx.logger.warn(`[switchblade] failed to register skill ${def.name}: ${String(error)}`);
+					this.ctx.logger.warn(`[switchblade] failed to register skill ${safe}: ${String(error)}`);
 				}
 			}
 			for (const [id, dispose] of [...this.registrations]) if (!wanted.has(id)) {
@@ -1656,7 +1678,7 @@ var Switchblade = class extends Service {
 	async installSkillFromDir(sourceDir) {
 		const root = join(homedir(), ".dsh", "skills");
 		await mkdir(root, { recursive: true });
-		const name = basename(sourceDir).replace(/\.md$/i, "");
+		const name = normalizeSkillName(basename(sourceDir).replace(/\.md$/i, ""));
 		const target = join(root, name);
 		await cp(sourceDir, target, {
 			recursive: true,
@@ -1680,10 +1702,11 @@ var Switchblade = class extends Service {
 	async installSkillFile(name, content) {
 		const root = join(homedir(), ".dsh", "skills");
 		await mkdir(root, { recursive: true });
-		const target = join(root, `${name}.md`);
+		const safe = normalizeSkillName(name);
+		const target = join(root, `${safe}.md`);
 		await writeFile(target, content, "utf8");
 		this.ctx.logger.warn(`[switchblade] wrote skill file ${target}`);
-		return name;
+		return safe;
 	}
 	/**
 	* Register a skill into the managed installedSkills list (persisted) and as
@@ -1691,8 +1714,9 @@ var Switchblade = class extends Service {
 	* callable via /name.
 	*/
 	async registerManagedSkill(name, description, content) {
+		const safe = normalizeSkillName(name);
 		const definition = {
-			name,
+			name: safe,
 			content,
 			description,
 			invocation: {
@@ -1702,7 +1726,7 @@ var Switchblade = class extends Service {
 			provider: "runtime",
 			source: "custom"
 		};
-		const id = `${ID_PREFIX.skill}:${name}`;
+		const id = `${ID_PREFIX.skill}:${safe}`;
 		const existing = this.registrations.get(id);
 		if (existing !== void 0) {
 			existing();
@@ -1711,16 +1735,16 @@ var Switchblade = class extends Service {
 		try {
 			this.registrations.set(id, this.ctx.skills.register(definition));
 		} catch (error) {
-			this.ctx.logger.warn(`[switchblade] runtime register of ${name} failed: ${String(error)}`);
+			this.ctx.logger.warn(`[switchblade] runtime register of ${safe} failed: ${String(error)}`);
 		}
 		const current = this.settings().installedSkills;
-		if (!current.some((s) => s.name === name)) {
+		if (!current.some((s) => s.name === safe)) {
 			await this.settingsService?.mutate(settingsNamespace(SETTINGS_NAMESPACE), [{
 				op: "set",
 				path: ["installedSkills"],
 				value: [...current, definition]
 			}]);
-			this.ctx.logger.warn(`[switchblade] registered managed skill ${name}`);
+			this.ctx.logger.warn(`[switchblade] registered managed skill ${safe}`);
 		}
 	}
 	/**
@@ -2293,6 +2317,13 @@ function parseSkillName(md) {
 /** Parse the frontmatter `description:` field from a skill markdown body. */
 function parseSkillDescription(md) {
 	return /^---[\s\S]*?^description:\s*([^\n]+)/m.exec(md)?.[1]?.trim();
+}
+/** Normalize an arbitrary string into a valid DSH skill name (kebab-case).
+* DSH rejects dots and other punctuation (`gpt-5.6-sol` → `gpt-5-6-sol`),
+* which previously made such skills fail to register silently. */
+function normalizeSkillName(name) {
+	const kebab = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+	return kebab.length > 0 ? kebab : `skill-${Date.now()}`;
 }
 /** Starter handler for imported command rows that arrive without a real handler. */
 function passthroughCommand(row) {

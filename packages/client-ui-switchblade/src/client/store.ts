@@ -30,6 +30,8 @@ export interface PromptRow {
   readonly order: number
   readonly enabled: boolean
   readonly isDefault: boolean
+  /** Fine-grained application scope (global by default). */
+  readonly scope?: { readonly type: 'global' } | { readonly type: 'project'; readonly key: string } | { readonly type: 'session'; readonly id: string }
 }
 
 /** An installed skill row. */
@@ -187,7 +189,7 @@ export class SwitchbladeSectionController {
   // ---------------------------------------------------------------------------
 
   /** Add a prompt. */
-  async addPrompt(input: { name: string; description: string; content: string }): Promise<void> {
+  async addPrompt(input: { name: string; description: string; content: string; scope?: PromptRow['scope'] }): Promise<void> {
     const res = await this.api.settings.mutate({
       ns: 'switchblade',
       ops: [{ op: 'set', path: ['prompts'], value: [...this.currentPrompts(), {
@@ -198,6 +200,7 @@ export class SwitchbladeSectionController {
         order: this.currentPrompts().length,
         enabled: true,
         isDefault: this.currentPrompts().length === 0,
+        ...(input.scope === undefined || input.scope.type === 'global' ? {} : { scope: input.scope }),
       }] }],
     })
     if (!res.result.ok) throw new Error(res.result.error.message)
@@ -222,13 +225,14 @@ export class SwitchbladeSectionController {
     await this.writePrompts(next)
   }
 
-  /** Update a prompt's name/description/content. */
-  async updatePrompt(id: string, patch: { name?: string; description?: string; content?: string }): Promise<void> {
+  /** Update a prompt's name/description/content/scope. */
+  async updatePrompt(id: string, patch: { name?: string; description?: string; content?: string; scope?: PromptRow['scope'] }): Promise<void> {
     const next = this.currentPrompts().map((p) => p.id === id ? {
       ...p,
       name: patch.name?.trim() || p.name,
       description: patch.description ?? p.description,
       content: patch.content ?? p.content,
+      ...(patch.scope === undefined ? {} : (patch.scope.type === 'global' ? { scope: undefined } : { scope: patch.scope })),
     } : p)
     await this.writePrompts(next)
   }

@@ -149,6 +149,14 @@ function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   })
 }
 
+/** One prompt's application scope: global (every agent), a single project
+ * workspace (matched by cwd basename), or a single session (by session id).
+ * Omitted = global — the historical behavior. */
+export type PromptScope =
+  | { readonly type: 'global' }
+  | { readonly type: 'project'; readonly key: string }
+  | { readonly type: 'session'; readonly id: string }
+
 /** One user-authored prompt (CCswitch-style), persisted and injected globally. */
 export interface ManagedPrompt {
   /** Stable id (slug). */
@@ -165,6 +173,8 @@ export interface ManagedPrompt {
   readonly enabled: boolean
   /** Whether this is the marked-default prompt (sorted first). */
   readonly isDefault: boolean
+  /** Fine-grained application scope (global by default). */
+  readonly scope?: PromptScope
 }
 
 /** Persisted slice of this plugin's state. */
@@ -324,7 +334,7 @@ export class Switchblade extends Service {
    * @param input - name, description, and content.
    * @returns the created prompt.
    */
-  async addPrompt(input: { name: string; description: string; content: string }): Promise<ManagedPrompt> {
+  async addPrompt(input: { name: string; description: string; content: string; scope?: PromptScope }): Promise<ManagedPrompt> {
     const name = input.name.trim()
     if (name.length === 0) throw new Error('prompt name is required')
     if (input.content.trim().length === 0) throw new Error('prompt content is required')
@@ -339,6 +349,7 @@ export class Switchblade extends Service {
       order: prompts.length,
       enabled: true,
       isDefault: prompts.length === 0,
+      ...(input.scope === undefined || input.scope.type === 'global' ? {} : { scope: input.scope }),
     }
     await this.writePrompts([...prompts, prompt])
     this.applyPromptRegistrations()
@@ -359,7 +370,7 @@ export class Switchblade extends Service {
   }
 
   /** Update a prompt's name/description/content. */
-  async updatePrompt(id: string, patch: { name?: string; description?: string; content?: string }): Promise<void> {
+  async updatePrompt(id: string, patch: { name?: string; description?: string; content?: string; scope?: PromptScope }): Promise<void> {
     const next = this.settings().prompts.map((p) => {
       if (p.id !== id) return p
       return {
@@ -367,6 +378,7 @@ export class Switchblade extends Service {
         name: patch.name?.trim() || p.name,
         description: patch.description?.trim() ?? p.description,
         content: patch.content ?? p.content,
+        ...(patch.scope === undefined ? {} : (patch.scope.type === 'global' ? { scope: undefined } : { scope: patch.scope })),
       }
     })
     await this.writePrompts(next)
@@ -389,6 +401,25 @@ export class Switchblade extends Service {
   }
 
   /**
+   * Whether a prompt's scope covers the agent assembling the system prompt.
+   * Global covers everything; project matches the session cwd basename;
+   * session matches the exact session id. Missing agent context (diagnostics,
+   * assembly outside a session) only matches global prompts.
+   */
+  private promptScopeMatches(prompt: ManagedPrompt, context: { agent?: { session?: { header?: { cwd?: string }; id?: string } } } | undefined): boolean {
+    const scope = prompt.scope
+    if (scope === undefined || scope.type === 'global') return true
+    if (scope.type === 'project') {
+      const cwd = context?.agent?.session?.header?.cwd
+      if (cwd === undefined || cwd === '') return false
+      const base = cwd.replace(/[/\\]+$/, '').split(/[/\\]/).pop() ?? ''
+      return base === scope.key
+    }
+    // session scope
+    return context?.agent?.session?.id === scope.id
+  }
+
+  /**
    * Reconcile live systemPrompt registrations against the persisted prompt
    * list. Directly reads this.ctx.systemPrompt (the plugin's own context can
    * resolve it; no ctx.inject here — that would spawn a fiber inside the
@@ -397,7 +428,7 @@ export class Switchblade extends Service {
    */
   applyPromptRegistrations(): void {
     try {
-      const system = (this.ctx as Context & { systemPrompt?: { section: (s: { name: string; order: number; text: string }) => () => void } }).systemPrompt
+      const system = (this.ctx as Context & { systemPrompt?: { section: (s: { name: string; order: number; text: string | ((c: unknown) => string) }) => () => void } }).systemPrompt
       if (system === undefined || typeof system.section !== 'function') {
         this.ctx.logger.warn('[switchblade] systemPrompt service unavailable — prompts will NOT be injected')
         return
@@ -413,7 +444,10 @@ export class Switchblade extends Service {
             const dispose = system.section({
               name: key,
               order: 200 + prompt.order,
-              text: prompt.content,
+              // Scoped prompts return their body only for matching agents;
+              // renderPrompt drops empty sections, so non-matching sessions
+              // never see them — zero leakage, zero global pollution.
+              text: (context) => this.promptScopeMatches(prompt, context as { agent?: { session?: { header?: { cwd?: string }; id?: string } } } | undefined) ? prompt.content : '',
             })
             this.promptSections.set(prompt.id, dispose)
             this.ctx.logger.warn(`[switchblade] registered prompt section ${key} (order ${200 + prompt.order})`)
@@ -447,15 +481,18 @@ export class Switchblade extends Service {
       if (skills === undefined || typeof skills.register !== 'function') return
       const wanted = new Set<string>()
       for (const def of this.settings().installedSkills) {
-        const id = `${ID_PREFIX.skill}:${def.name}`
+        // Persisted names from older versions may violate the skill grammar
+        // (dots etc.); normalize before registering so they actually load.
+        const safe = normalizeSkillName((def as SkillDefinition & { name: string }).name)
+        const id = `${ID_PREFIX.skill}:${safe}`
         const enabled = (def as SkillDefinition & { enabled?: boolean }).enabled ?? true
         if (!enabled) continue
         wanted.add(id)
         if (!this.registrations.has(id)) {
           try {
-            this.registrations.set(id, skills.register(def))
+            this.registrations.set(id, skills.register({ ...def, name: safe }))
           } catch (error) {
-            this.ctx.logger.warn(`[switchblade] failed to register skill ${def.name}: ${String(error)}`)
+            this.ctx.logger.warn(`[switchblade] failed to register skill ${safe}: ${String(error)}`)
           }
         }
       }
@@ -536,7 +573,8 @@ export class Switchblade extends Service {
   async installSkillFromDir(sourceDir: string): Promise<string> {
     const root = join(homedir(), '.dsh', 'skills')
     await mkdir(root, { recursive: true })
-    const name = basename(sourceDir).replace(/\.md$/i, '')
+    const rawName = basename(sourceDir).replace(/\.md$/i, '')
+    const name = normalizeSkillName(rawName)
     const target = join(root, name)
     await cp(sourceDir, target, { recursive: true, force: true })
     this.ctx.logger.warn(`[switchblade] installed skill from dir ${sourceDir} → ${target}`)
@@ -560,10 +598,11 @@ export class Switchblade extends Service {
   async installSkillFile(name: string, content: string): Promise<string> {
     const root = join(homedir(), '.dsh', 'skills')
     await mkdir(root, { recursive: true })
-    const target = join(root, `${name}.md`)
+    const safe = normalizeSkillName(name)
+    const target = join(root, `${safe}.md`)
     await writeFile(target, content, 'utf8')
     this.ctx.logger.warn(`[switchblade] wrote skill file ${target}`)
-    return name
+    return safe
   }
 
   /**
@@ -572,15 +611,16 @@ export class Switchblade extends Service {
    * callable via /name.
    */
   private async registerManagedSkill(name: string, description: string, content: string): Promise<void> {
+    const safe = normalizeSkillName(name)
     const definition: SkillDefinition = {
-      name,
+      name: safe,
       content,
       description,
       invocation: { modelInvocable: true, userInvocable: true },
       provider: 'runtime',
       source: 'custom',
     }
-    const id = `${ID_PREFIX.skill}:${name}`
+    const id = `${ID_PREFIX.skill}:${safe}`
     // Dispose any existing registration for this name, then re-register.
     const existing = this.registrations.get(id)
     if (existing !== undefined) {
@@ -590,16 +630,16 @@ export class Switchblade extends Service {
     try {
       this.registrations.set(id, this.ctx.skills.register(definition))
     } catch (error) {
-      this.ctx.logger.warn(`[switchblade] runtime register of ${name} failed: ${String(error)}`)
+      this.ctx.logger.warn(`[switchblade] runtime register of ${safe} failed: ${String(error)}`)
     }
     // Persist into installedSkills (skip if already present).
     const current = this.settings().installedSkills
-    if (!current.some((s) => s.name === name)) {
+    if (!current.some((s) => s.name === safe)) {
       await this.settingsService?.mutate(
         settingsNamespace(SETTINGS_NAMESPACE),
         [{ op: 'set', path: ['installedSkills'], value: [...current, definition] }],
       )
-      this.ctx.logger.warn(`[switchblade] registered managed skill ${name}`)
+      this.ctx.logger.warn(`[switchblade] registered managed skill ${safe}`)
     }
   }
 
@@ -1154,6 +1194,16 @@ function parseSkillName(md: string): string | undefined {
 function parseSkillDescription(md: string): string | undefined {
   const m = /^---[\s\S]*?^description:\s*([^\n]+)/m.exec(md)
   return m?.[1]?.trim()
+}
+
+/** Normalize an arbitrary string into a valid DSH skill name (kebab-case).
+ * DSH rejects dots and other punctuation (`gpt-5.6-sol` → `gpt-5-6-sol`),
+ * which previously made such skills fail to register silently. */
+function normalizeSkillName(name: string): string {
+  const kebab = name.trim().toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return kebab.length > 0 ? kebab : `skill-${Date.now()}`
 }
 
 /** Starter handler for imported command rows that arrive without a real handler. */
