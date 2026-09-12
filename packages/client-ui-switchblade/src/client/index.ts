@@ -56,7 +56,7 @@ interface SettingsScopeBinderLike {
 }
 
 /** Required services (cordis fiber inject). */
-export const inject = ['slots', 'locale', 'settingsScope', 'remote', 'sessions']
+export const inject = ['slots', 'locale', 'settingsScope', 'remote', 'remote.skills', 'sessions']
 
 /**
  * Mount the Switchblade settings section.

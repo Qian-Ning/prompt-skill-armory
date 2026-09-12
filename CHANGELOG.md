@@ -6,6 +6,14 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.10.2] - 2026-09
+
+### 修复 · Fixed
+- **面板报错 `cannot get property "remote.skills" without inject`**：2.0.9 的 cordis 要求 client 插件在 `inject` 里显式声明 `remote.skills` 子命名空间（与官方 ui-skill 一致），且 `skills.list` 的签名是 `({ sessionId }, signal)` 而非旧的 `{ request: ... }`。补齐 inject + 修正调用后，面板正常加载，之前保存的提示词/技能/MCP 数据全部恢复显示（数据一直在 settings.yaml，从未丢失）。
+  **Panel error `cannot get property "remote.skills" without inject`**: 2.0.9's cordis requires the client plugin to declare the `remote.skills` sub-namespace in `inject` (matching official ui-skill), and `skills.list` takes `({ sessionId }, signal)` not the old `{ request: ... }`. With the inject added and the call fixed, the panel loads and previously saved prompts/skills/MCP data is restored (it was always in settings.yaml).
+- **输入框提示样式适配 2.0.9**：2.0.9 移除了旧的 `[data-decoration="hint"]` 行，提示改在输入框内（placeholder + claim hint）。提示样式选择器改到稳定的 `[data-composer-card]`（placeholder 与内嵌提示文本），颜色/字号/渐变照常生效。
+  **Hint style adapted to 2.0.9**: the old `[data-decoration="hint"]` row is gone in 2.0.9; hints now live inside the composer card (placeholder + inline claim hint). The style now targets `[data-composer-card]` placeholder and hint text, keeping color/size/gradient working.
+
 ## [0.10.1] - 2026-09
 
 ### 修复 · Fixed

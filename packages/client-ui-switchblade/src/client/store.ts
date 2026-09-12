@@ -42,7 +42,7 @@ export interface SettingsScopeLike {
 /** 2.0.9 remote RPC surface (from `ctx.remote`). */
 export interface RemoteLike {
   skills: {
-    list(request: { request: { sessionId: SessionId } }): Promise<{ ok: boolean; value?: { skills?: { name: string; description: string; modelInvocable: boolean }[] } }>
+    list(request: { sessionId: SessionId }, signal?: AbortSignal): Promise<{ ok: boolean; error?: { code?: string; message?: string }; value?: { skills?: { name: string; description: string; modelInvocable: boolean }[] } }>
   }
 }
 
@@ -163,10 +163,10 @@ export class SwitchbladeSectionController {
       // hang). Settings always resolve, so the panel opens reliably.
       const sessionId = this.sessionId?.()
       const calls: Promise<unknown>[] = [Promise.resolve(this.describeSettings())]
-      if (sessionId !== undefined) calls.push(this.remote.skills.list({ request: { sessionId } }))
+      if (sessionId !== undefined) calls.push(this.remote.skills.list({ sessionId }))
       const [switchbladeSection, skillRes] = await Promise.all(calls) as [
         Record<string, unknown> | undefined,
-        { ok: boolean; error?: { message?: string }; value?: { skills?: { name: string; description: string; modelInvocable: boolean }[] } } | undefined,
+        { ok: boolean; error?: { code?: string; message?: string }; value?: { skills?: { name: string; description: string; modelInvocable: boolean }[] } } | undefined,
       ]
 
       const skills: SkillRow[] = skillRes !== undefined && skillRes.ok && skillRes.value !== undefined

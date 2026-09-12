@@ -303,7 +303,10 @@ export function applyBackground(section: BackgroundSettings): void {
 
 let hintObserver: MutationObserver | undefined
 
-/** Inject (or clear) the per-surface style for the composer's hint row + dock stats line. */
+/** Inject (or clear) the per-surface style for the composer hint + input card.
+ * DSH 2.0.9 removed the old `[data-decoration="hint"]` row; the composer card
+ * (`[data-composer-card]`) is the stable surface that carries the input
+ * placeholder and inline claim hints, so the style lands there. */
 export function applyHintStyle(): void {
   try {
     const hint = (bgState.value ?? DEFAULT_BACKGROUND).hint ?? DEFAULT_BACKGROUND.hint
@@ -321,7 +324,17 @@ export function applyHintStyle(): void {
     const size = hint.size || 11
     const gradPreset = GRADIENTS.find((g) => g.id === (hint.gradient ?? ''))
     const grad = gradPreset !== undefined ? gradPreset.css : ''
-    let hintCss = `[data-decoration="hint"]{font-size:${size}px;letter-spacing:0.3px;font-weight:600;opacity:0.95;`
+    const props = [
+      'font-size:' + size + 'px',
+      'letter-spacing:0.3px',
+      'font-weight:600',
+      'opacity:0.95',
+      grad !== '' ? `background-image:${grad};-webkit-background-clip:text;background-clip:text;color:transparent` : `color:${color}`,
+    ].join(';')
+    // Placeholder + any inline hint text inside the composer card.
+    tag.textContent = `[data-composer-card] input::placeholder,[data-composer-card] textarea::placeholder{${props}}
+[data-composer-card] [class*="_hint"]{${props}}`
+    // The dock's StatsLine roots are CSS-module hashed; locate via its aria-hidden "|" separators.
     const statsStyle = (root: HTMLElement): void => {
       if (grad !== '') {
         root.style.backgroundImage = grad
@@ -338,14 +351,6 @@ export function applyHintStyle(): void {
       root.style.fontWeight = '600'
       root.style.opacity = '0.95'
     }
-    if (grad !== '') {
-      hintCss += `background-image:${grad};-webkit-background-clip:text;background-clip:text;color:transparent`
-    } else {
-      hintCss += `color:${color}`
-    }
-    hintCss += '}'
-    tag.textContent = hintCss
-    // The dock's StatsLine roots are CSS-module hashed; locate via its aria-hidden "|" separators.
     const applyStats = (): void => {
       try {
         const seps = Array.from(document.querySelectorAll<HTMLSpanElement>('span[aria-hidden]'))

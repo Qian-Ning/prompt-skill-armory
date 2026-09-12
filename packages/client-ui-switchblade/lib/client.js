@@ -461,7 +461,10 @@ window.__ModuleLoader__.load({
 			applyHintStyle();
 		}
 		let hintObserver;
-		/** Inject (or clear) the per-surface style for the composer's hint row + dock stats line. */
+		/** Inject (or clear) the per-surface style for the composer hint + input card.
+		* DSH 2.0.9 removed the old `[data-decoration="hint"]` row; the composer card
+		* (`[data-composer-card]`) is the stable surface that carries the input
+		* placeholder and inline claim hints, so the style lands there. */
 		function applyHintStyle() {
 			try {
 				const hint = (bgState.value ?? DEFAULT_BACKGROUND).hint ?? DEFAULT_BACKGROUND.hint;
@@ -482,7 +485,15 @@ window.__ModuleLoader__.load({
 				const size = hint.size || 11;
 				const gradPreset = GRADIENTS.find((g) => g.id === (hint.gradient ?? ""));
 				const grad = gradPreset !== void 0 ? gradPreset.css : "";
-				let hintCss = `[data-decoration="hint"]{font-size:${size}px;letter-spacing:0.3px;font-weight:600;opacity:0.95;`;
+				const props = [
+					"font-size:" + size + "px",
+					"letter-spacing:0.3px",
+					"font-weight:600",
+					"opacity:0.95",
+					grad !== "" ? `background-image:${grad};-webkit-background-clip:text;background-clip:text;color:transparent` : `color:${color}`
+				].join(";");
+				tag.textContent = `[data-composer-card] input::placeholder,[data-composer-card] textarea::placeholder{${props}}
+[data-composer-card] [class*="_hint"]{${props}}`;
 				const statsStyle = (root) => {
 					if (grad !== "") {
 						root.style.backgroundImage = grad;
@@ -499,10 +510,6 @@ window.__ModuleLoader__.load({
 					root.style.fontWeight = "600";
 					root.style.opacity = "0.95";
 				};
-				if (grad !== "") hintCss += `background-image:${grad};-webkit-background-clip:text;background-clip:text;color:transparent`;
-				else hintCss += `color:${color}`;
-				hintCss += "}";
-				tag.textContent = hintCss;
 				const applyStats = () => {
 					try {
 						const seps = Array.from(document.querySelectorAll("span[aria-hidden]"));
@@ -969,7 +976,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.10.1";
+		const ARMORY_VERSION = "0.10.2";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;
@@ -3286,7 +3293,7 @@ window.__ModuleLoader__.load({
 				try {
 					const sessionId = this.sessionId?.();
 					const calls = [Promise.resolve(this.describeSettings())];
-					if (sessionId !== void 0) calls.push(this.remote.skills.list({ request: { sessionId } }));
+					if (sessionId !== void 0) calls.push(this.remote.skills.list({ sessionId }));
 					const [switchbladeSection, skillRes] = await Promise.all(calls);
 					const skills = skillRes !== void 0 && skillRes.ok && skillRes.value !== void 0 ? skillRes.value.skills.map((skill) => ({
 						name: skill.name,
@@ -3564,6 +3571,7 @@ window.__ModuleLoader__.load({
 			"locale",
 			"settingsScope",
 			"remote",
+			"remote.skills",
 			"sessions"
 		];
 		/**
