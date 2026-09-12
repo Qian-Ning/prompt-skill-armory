@@ -1555,7 +1555,8 @@ var Switchblade = class extends Service {
 	static inject = [
 		"loader",
 		"skills",
-		"systemPrompt"
+		"systemPrompt",
+		"commands"
 	];
 	/** Registry configuration. */
 	static Config = z.object({ defaultProfile: z.string() });
@@ -2546,7 +2547,11 @@ function apply(ctx) {
 	ctx.logger.warn("[switchblade] apply() invoked — mounting Switchblade service");
 	ctx.plugin(Switchblade).then((fiber) => {
 		ctx.logger.warn("[switchblade] Switchblade service mounted");
-		const service = fiber.ctx.switchblade;
+		const service = fiber.ctx.get("switchblade");
+		if (service === void 0) {
+			ctx.logger.warn("[switchblade] Switchblade service unavailable — commands not registered");
+			return;
+		}
 		defineCommands(ctx, service);
 	}, (error) => {
 		ctx.logger.warn(`[switchblade] command registration failed: ${error instanceof Error ? error.message : String(error)}`);

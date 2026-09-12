@@ -44,7 +44,13 @@ export function apply(ctx: Context): void {
   // which (via `inject`) can resolve ctx.commands.
   void ctx.plugin(Switchblade).then((fiber) => {
     ctx.logger.warn('[switchblade] Switchblade service mounted')
-    const service = (fiber.ctx as Context & { switchblade: Switchblade }).switchblade
+    // DSH 2.0.9's cordis forbids property access to un-injected services
+    // (`cannot get property "switchblade" without inject`); resolve lazily.
+    const service = fiber.ctx.get('switchblade') as Switchblade | undefined
+    if (service === undefined) {
+      ctx.logger.warn('[switchblade] Switchblade service unavailable — commands not registered')
+      return
+    }
     defineCommands(ctx, service)
   }, (error: unknown) => {
     ctx.logger.warn(`[switchblade] command registration failed: ${error instanceof Error ? error.message : String(error)}`)

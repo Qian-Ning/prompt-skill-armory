@@ -228,7 +228,7 @@ declare module '@deepseek-ai/cordis' {
  */
 export class Switchblade extends Service {
   /** Services the plugin reads from ctx; inject-declared so Cordis resolves them. */
-  static inject = ['loader', 'skills', 'systemPrompt']
+  static inject = ['loader', 'skills', 'systemPrompt', 'commands']
 
   /** Registry configuration. */
   static Config: z<Config> = z.object({

@@ -6,6 +6,14 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.9.9] - 2026-09
+
+### 修复 · Fixed
+- **DSH Desktop 2.0.9 恢复模式（根治）**：2.0.9 的 cordis 禁止对未注入的服务做属性访问。插件里 `fiber.ctx.switchblade` 属性访问在加载时抛 `cannot get property "switchblade" without inject`，导致整个客户端启动失败进恢复模式。改为 `ctx.get('switchblade')` 惰性解析，并在 Switchblade 服务的 `static inject` 补上 `commands`；配合上一版对 `cordis.patch.yml` 的块级去重，2.0.9 下已通过 `dsh --profile desktop` 实测完整启动。
+  **DSH Desktop 2.0.9 recovery mode (root cause)**: 2.0.9's cordis forbids property access to non-injected services. The plugin's `fiber.ctx.switchblade` property access threw `cannot get property "switchblade" without inject` at load, failing startup into recovery mode. Switched to lazy `ctx.get('switchblade')` and added `commands` to `static inject`; verified a full boot via `dsh --profile desktop` on 2.0.9.
+- **提示词作用域（精细化差分）**：每个提示词可选 全局 / 指定项目（cwd 目录名）/ 指定会话（session id）。Host 通过 systemPrompt section 的 text 函数按当前 agent 的 cwd/sessionId 匹配，不匹配返回空串（渲染时自动过滤）——零全局污染。
+  **Prompt scoping (fine-grained diff)**: each prompt can target global / a project (cwd basename) / a session (id); non-matching agents get an empty section that render filters out.
+
 ## [0.9.8] - 2026-08
 
 ### 修复 · Fixed

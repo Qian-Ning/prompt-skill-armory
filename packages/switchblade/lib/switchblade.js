@@ -1356,7 +1356,8 @@ var Switchblade = class extends Service {
 	static inject = [
 		"loader",
 		"skills",
-		"systemPrompt"
+		"systemPrompt",
+		"commands"
 	];
 	/** Registry configuration. */
 	static Config = z.object({ defaultProfile: z.string() });
