@@ -494,7 +494,10 @@ window.__ModuleLoader__.load({
 				].join(";");
 				tag.textContent = `[data-composer-placeholder]{${props}}
 [data-composer-card] input::placeholder,[data-composer-card] textarea::placeholder{${props}}
-[data-composer-card] [class*="_hint"]{${props}}`;
+[data-composer-card] [class*="_hint"]{${props}}
+[data-composer-stats]{${props}}
+[data-composer-stats] [class*="_label"]{${props}}
+[data-composer-stats] [class*="_pill"]{${props}}`;
 				const statsStyle = (root) => {
 					if (grad !== "") {
 						root.style.backgroundImage = grad;
@@ -515,7 +518,7 @@ window.__ModuleLoader__.load({
 					try {
 						const seps = Array.from(document.querySelectorAll("span[aria-hidden]"));
 						for (const sep of seps) {
-							if (sep.textContent !== "|") continue;
+							if (sep.textContent !== "·" && sep.textContent !== "|") continue;
 							const root = sep.parentElement;
 							if (root !== null) statsStyle(root);
 						}
@@ -977,7 +980,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.10.3";
+		const ARMORY_VERSION = "0.10.4";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;

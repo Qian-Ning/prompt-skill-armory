@@ -331,11 +331,17 @@ export function applyHintStyle(): void {
       'opacity:0.95',
       grad !== '' ? 'display:inline-block;background-image:' + grad + ';-webkit-background-clip:text;background-clip:text;color:transparent' : `color:${color}`,
     ].join(';')
-    // Placeholder + any inline hint text inside the composer card.
+    // Placeholder + stats strip: `[data-composer-stats]` hosts the session
+    // stats + token-usage pills below the composer in 2.0.9; its label/sep
+    // classes are CSS-module hashed, so anchor on the stable attribute.
     tag.textContent = `[data-composer-placeholder]{${props}}
 [data-composer-card] input::placeholder,[data-composer-card] textarea::placeholder{${props}}
-[data-composer-card] [class*="_hint"]{${props}}`
-    // The dock's StatsLine roots are CSS-module hashed; locate via its aria-hidden "|" separators.
+[data-composer-card] [class*="_hint"]{${props}}
+[data-composer-stats]{${props}}
+[data-composer-stats] [class*="_label"]{${props}}
+[data-composer-stats] [class*="_pill"]{${props}}`
+    // Stats strip labels are hashed; the `·` separators (aria-hidden) give a
+    // stable anchor — paint their parent text with the chosen style.
     const statsStyle = (root: HTMLElement): void => {
       if (grad !== '') {
         root.style.backgroundImage = grad
@@ -356,7 +362,7 @@ export function applyHintStyle(): void {
       try {
         const seps = Array.from(document.querySelectorAll<HTMLSpanElement>('span[aria-hidden]'))
         for (const sep of seps) {
-          if (sep.textContent !== '|') continue
+          if (sep.textContent !== '·' && sep.textContent !== '|') continue
           const root = sep.parentElement
           if (root !== null) statsStyle(root)
         }

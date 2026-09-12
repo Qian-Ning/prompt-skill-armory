@@ -6,6 +6,12 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.10.4] - 2026-09
+
+### 修复 · Fixed
+- **输入框下方提示样式真正生效**：该样式针对的是输入框下方的**会话统计 + token 用量条**（2.0.9 渲染为 `[data-composer-stats]` 容器，内含 TimePill/UsagePill，分隔符为 `·`）。CSS 锚定 `[data-composer-stats]` 及其 `_label`/`_pill`（哈希类名用属性选择器匹配），JS 分隔符匹配从旧版 `|` 扩展为 `·`/ `|`。
+  **Composer stats-strip hint style now works**: this style targets the session-stats + token-usage strip below the composer, which 2.0.9 renders as `[data-composer-stats]` (TimePill/UsagePill, `·` separators). CSS anchors on `[data-composer-stats]` and its `_label`/`_pill` hashed classes via attribute selectors; JS separator matching now covers `·` and `|`.
+
 ## [0.10.3] - 2026-09
 
 ### 修复 · Fixed
