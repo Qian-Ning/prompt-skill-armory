@@ -301,19 +301,19 @@ export function applyBackground(section: BackgroundSettings): void {
   applyHintStyle()
 }
 
-let hintObserver: MutationObserver | undefined
-
 /** Inject (or clear) the per-surface style for the composer hint + input card.
- * DSH 2.0.9 removed the old `[data-decoration="hint"]` row; the composer card
- * (`[data-composer-card]`) is the stable surface that carries the input
- * placeholder and inline claim hints, so the style lands there. */
+ * (2.0.9) the composer stats strip renders as `[data-composer-stats]` with
+ * hashed label/pill classes. Everything is driven by ONE style tag: disabling
+ * removes the tag (and nothing else), so the UI returns to its exact original
+ * state — no inline styles are ever written, and no layout properties are
+ * touched (font/color only, applied to text labels, never the flex containers). */
 export function applyHintStyle(): void {
   try {
     const hint = (bgState.value ?? DEFAULT_BACKGROUND).hint ?? DEFAULT_BACKGROUND.hint
     const existing = document.getElementById('switchblade-hint') as HTMLStyleElement | null
     if (!hint.enabled) {
+      // Removing the tag is the whole restore: nothing else was ever mutated.
       if (existing !== null) existing.remove()
-      hintObserver?.disconnect(); hintObserver = undefined
       return
     }
     if (existing === null) {
@@ -324,53 +324,25 @@ export function applyHintStyle(): void {
     const size = hint.size || 11
     const gradPreset = GRADIENTS.find((g) => g.id === (hint.gradient ?? ''))
     const grad = gradPreset !== undefined ? gradPreset.css : ''
-    const props = [
+    // Text-only props. Font-size/weight/letter-spacing/opacity/color do NOT
+    // change layout; gradient gets inline-block so background-clip:text renders
+    // on the label span without disturbing the flex strip.
+    const textProps = [
       'font-size:' + size + 'px',
       'letter-spacing:0.3px',
       'font-weight:600',
       'opacity:0.95',
       grad !== '' ? 'display:inline-block;background-image:' + grad + ';-webkit-background-clip:text;background-clip:text;color:transparent' : `color:${color}`,
     ].join(';')
-    // Placeholder + stats strip: `[data-composer-stats]` hosts the session
-    // stats + token-usage pills below the composer in 2.0.9; its label/sep
-    // classes are CSS-module hashed, so anchor on the stable attribute.
-    tag.textContent = `[data-composer-placeholder]{${props}}
-[data-composer-card] input::placeholder,[data-composer-card] textarea::placeholder{${props}}
-[data-composer-card] [class*="_hint"]{${props}}
-[data-composer-stats]{${props}}
-[data-composer-stats] [class*="_label"]{${props}}
-[data-composer-stats] [class*="_pill"]{${props}}`
-    // Stats strip labels are hashed; the `·` separators (aria-hidden) give a
-    // stable anchor — paint their parent text with the chosen style.
-    const statsStyle = (root: HTMLElement): void => {
-      if (grad !== '') {
-        root.style.backgroundImage = grad
-        root.style.webkitBackgroundClip = 'text'
-        root.style.backgroundClip = 'text'
-        root.style.color = 'transparent'
-      } else {
-        root.style.backgroundImage = 'none'
-        root.style.webkitBackgroundClip = 'initial'
-        root.style.backgroundClip = 'initial'
-        root.style.color = color
-      }
-      root.style.fontSize = `${size}px`
-      root.style.fontWeight = '600'
-      root.style.opacity = '0.95'
-    }
-    const applyStats = (): void => {
-      try {
-        const seps = Array.from(document.querySelectorAll<HTMLSpanElement>('span[aria-hidden]'))
-        for (const sep of seps) {
-          if (sep.textContent !== '·' && sep.textContent !== '|') continue
-          const root = sep.parentElement
-          if (root !== null) statsStyle(root)
-        }
-      } catch { /* ignore */ }
-    }
-    if (hintObserver !== undefined) hintObserver.disconnect()
-    hintObserver = new MutationObserver(applyStats)
-    hintObserver.observe(document.body, { childList: true, subtree: true })
-    applyStats()
+    // Composer input placeholder + claim-hint text (inside the card — inert).
+    const cardProps = [
+      'font-size:' + size + 'px',
+      'font-weight:600',
+      'opacity:0.95',
+      grad !== '' ? 'background-image:' + grad + ';-webkit-background-clip:text;background-clip:text;color:transparent' : `color:${color}`,
+    ].join(';')
+    tag.textContent = `[data-composer-placeholder]{${cardProps}}
+[data-composer-card] input::placeholder,[data-composer-card] textarea::placeholder{${cardProps}}
+[data-composer-stats] [class*="_label"]{${textProps}}`
   } catch { /* never fatal */ }
 }

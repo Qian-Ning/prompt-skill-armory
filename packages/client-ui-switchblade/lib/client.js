@@ -460,19 +460,18 @@ window.__ModuleLoader__.load({
 			} catch {}
 			applyHintStyle();
 		}
-		let hintObserver;
 		/** Inject (or clear) the per-surface style for the composer hint + input card.
-		* DSH 2.0.9 removed the old `[data-decoration="hint"]` row; the composer card
-		* (`[data-composer-card]`) is the stable surface that carries the input
-		* placeholder and inline claim hints, so the style lands there. */
+		* (2.0.9) the composer stats strip renders as `[data-composer-stats]` with
+		* hashed label/pill classes. Everything is driven by ONE style tag: disabling
+		* removes the tag (and nothing else), so the UI returns to its exact original
+		* state — no inline styles are ever written, and no layout properties are
+		* touched (font/color only, applied to text labels, never the flex containers). */
 		function applyHintStyle() {
 			try {
 				const hint = (bgState.value ?? DEFAULT_BACKGROUND).hint ?? DEFAULT_BACKGROUND.hint;
 				const existing = document.getElementById("switchblade-hint");
 				if (!hint.enabled) {
 					if (existing !== null) existing.remove();
-					hintObserver?.disconnect();
-					hintObserver = void 0;
 					return;
 				}
 				if (existing === null) {
@@ -485,52 +484,22 @@ window.__ModuleLoader__.load({
 				const size = hint.size || 11;
 				const gradPreset = GRADIENTS.find((g) => g.id === (hint.gradient ?? ""));
 				const grad = gradPreset !== void 0 ? gradPreset.css : "";
-				const props = [
+				const textProps = [
 					"font-size:" + size + "px",
 					"letter-spacing:0.3px",
 					"font-weight:600",
 					"opacity:0.95",
 					grad !== "" ? "display:inline-block;background-image:" + grad + ";-webkit-background-clip:text;background-clip:text;color:transparent" : `color:${color}`
 				].join(";");
-				tag.textContent = `[data-composer-placeholder]{${props}}
-[data-composer-card] input::placeholder,[data-composer-card] textarea::placeholder{${props}}
-[data-composer-card] [class*="_hint"]{${props}}
-[data-composer-stats]{${props}}
-[data-composer-stats] [class*="_label"]{${props}}
-[data-composer-stats] [class*="_pill"]{${props}}`;
-				const statsStyle = (root) => {
-					if (grad !== "") {
-						root.style.backgroundImage = grad;
-						root.style.webkitBackgroundClip = "text";
-						root.style.backgroundClip = "text";
-						root.style.color = "transparent";
-					} else {
-						root.style.backgroundImage = "none";
-						root.style.webkitBackgroundClip = "initial";
-						root.style.backgroundClip = "initial";
-						root.style.color = color;
-					}
-					root.style.fontSize = `${size}px`;
-					root.style.fontWeight = "600";
-					root.style.opacity = "0.95";
-				};
-				const applyStats = () => {
-					try {
-						const seps = Array.from(document.querySelectorAll("span[aria-hidden]"));
-						for (const sep of seps) {
-							if (sep.textContent !== "·" && sep.textContent !== "|") continue;
-							const root = sep.parentElement;
-							if (root !== null) statsStyle(root);
-						}
-					} catch {}
-				};
-				if (hintObserver !== void 0) hintObserver.disconnect();
-				hintObserver = new MutationObserver(applyStats);
-				hintObserver.observe(document.body, {
-					childList: true,
-					subtree: true
-				});
-				applyStats();
+				const cardProps = [
+					"font-size:" + size + "px",
+					"font-weight:600",
+					"opacity:0.95",
+					grad !== "" ? "background-image:" + grad + ";-webkit-background-clip:text;background-clip:text;color:transparent" : `color:${color}`
+				].join(";");
+				tag.textContent = `[data-composer-placeholder]{${cardProps}}
+[data-composer-card] input::placeholder,[data-composer-card] textarea::placeholder{${cardProps}}
+[data-composer-stats] [class*="_label"]{${textProps}}`;
 			} catch {}
 		}
 		//#endregion
@@ -980,7 +949,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		/** Bump with every release; keep in sync with package.json version + CHANGELOG. */
-		const ARMORY_VERSION = "0.10.4";
+		const ARMORY_VERSION = "0.10.5";
 		/** Compact duration: 45.2s / 2m42s / 1h05m. */
 		function fmtDuration(ms) {
 			const s = ms / 1e3;

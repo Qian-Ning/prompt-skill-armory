@@ -6,6 +6,12 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 [Semantic Versioning](https://semver.org/)。
 
+## [0.10.5] - 2026-09
+
+### 修复 · Fixed
+- **输入框下方提示样式停用/启用异常**：此前的实现用 JS 直接改写元素 inline style——停用时只删样式标签、残留的 inline 样式没有还原（所以「关不掉」），启用时又给统计条容器加了字号与 `display:inline-block`（所以布局被撑动）。改为**单一 CSS 样式标签驱动**：停用即删除标签，DOM 零残留、完全还原；样式只作用于统计条 label 文本（font/color），不再触碰 flex 容器布局。
+  **Composer stats-strip style toggle was broken**: the old implementation wrote inline styles via JS — disabling removed only the style tag, leaving inline styles behind (so it never reverted), and enabling added font-size / `display:inline-block` to the strip container (so the layout shifted). Now driven by a single CSS tag: disabling deletes the tag with zero DOM residue (fully restores), and styles apply only to the strip label text (font/color), never touching the flex container layout.
+
 ## [0.10.4] - 2026-09
 
 ### 修复 · Fixed
